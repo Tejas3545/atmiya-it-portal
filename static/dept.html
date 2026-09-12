@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title id="page-title">Attendance Portal | Atmiya University</title>
+  <meta name="description" content="Atmiya University — Faculty of Engineering & Technology — Student Attendance & Compensation Portal" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="college-brand">
+        <img src="/atmiyalogonaac.png" alt="Atmiya University Logo" class="brand-logo" />
+        <div class="brand-text">
+          <h1 class="brand-name">ATMIYA UNIVERSITY</h1>
+          <p class="brand-sub">RAJKOT, GUJARAT &nbsp;|&nbsp; <span class="tagline-gold">Yogidam Sarva-Bhutanam</span></p>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="sync-btn" id="sync-btn" title="Sync latest data from spreadsheet" onclick="triggerSync()">
+          <svg class="sync-icon" id="sync-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6"/>
+            <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M2.5 16l1.2 1.8a10 10 0 0 0 18.8-4.3"/>
+          </svg>
+          <span class="sync-btn-text">Refresh</span>
+        </button>        <span class="dept-badge-title" id="dept-badge-label">Loading...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-content">
+
+    <!-- Breadcrumb back link -->
+    <div class="breadcrumb">
+      <a href="/" class="breadcrumb-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        All Departments
+      </a>
+      <span class="breadcrumb-sep">/</span>
+      <span class="breadcrumb-current" id="breadcrumb-dept">—</span>
+    </div>
+
+    <!-- Page Title -->
+    <div class="portal-heading">
+      <h2 class="portal-title">STUDENT ATTENDANCE &amp; COMPENSATION PORTAL</h2>
+      <div class="star-divider">
+        <span class="star-line"></span>
+        <span class="star-icon">&#9733;</span>
+        <span class="star-line"></span>
+      </div>
+      <p class="portal-subtitle" id="portal-subtitle">Select your Semester and enter Registration or Enrollment Number to view attendance details</p>
+    </div>
+
+    <!-- Coming Soon Overlay (shown when no data yet) -->
+    <div class="coming-soon-card" id="coming-soon-card" style="display:none;">
+      <div class="coming-soon-icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+        </svg>
+      </div>
+      <h3 class="coming-soon-title">Data Coming Soon</h3>
+      <p class="coming-soon-text">Attendance data for this department is being set up. Please check back later or contact your department coordinator.</p>
+      <a href="/" class="btn btn--navy" style="margin-top:16px; text-decoration:none;">
+        ← Back to All Departments
+      </a>
+    </div>
+
+    <!-- Search Section -->
+    <section class="search-section" id="search-section">
+      <div class="search-card">
+        <form class="search-form" id="search-form" autocomplete="off">
+          <div class="fields-row">
+
+            <!-- Semester Select -->
+            <div class="field-group sem-group">
+              <label class="field-label" for="semester-select">SEMESTER</label>
+              <div class="select-wrap">
+                <select id="semester-select" class="field-select" required>
+                  <option value="">Select Semester</option>
+                  <option value="1">Semester 1</option>
+                  <option value="2">Semester 2</option>
+                  <option value="3">Semester 3</option>
+                  <option value="4">Semester 4</option>
+                  <option value="5">Semester 5</option>
+                  <option value="6">Semester 6</option>
+                  <option value="7">Semester 7</option>
+                  <option value="8">Semester 8</option>
+                </select>
+                <span class="select-arrow" aria-hidden="true">&#9660;</span>
+              </div>
+            </div>
+
+            <!-- ID Input -->
+            <div class="field-group id-group">
+              <label class="field-label" for="student-id">REGISTRATION / ENROLLMENT NO.</label>
+              <div class="input-wrap">
+                <span class="input-icon" aria-hidden="true">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+                </span>
+                <input
+                  type="text"
+                  id="student-id"
+                  class="field-input"
+                  placeholder="Enter Reg. No or Enr. No"
+                  maxlength="25"
+                  spellcheck="false"
+                />
+              </div>
+            </div>
+
+            <!-- Search Button -->
+            <div class="field-group btn-group">
+              <button type="submit" class="search-btn" id="search-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                <span class="btn-text">SEARCH</span>
+                <span class="btn-loader" aria-hidden="true"></span>
+              </button>
+            </div>
+
+          </div>
+
+          <div class="error-strip" id="error-box" role="alert" aria-live="polite"></div>
+        </form>
+      </div>
+    </section>
+
+    <!-- Results Section -->
+    <section class="results-board" id="result-section" aria-live="polite">
+
+      <!-- Student Information -->
+      <div class="kcard identity-kcard" id="identity-card">
+        <div class="kcard-topbar">
+          <div class="topbar-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>
+            <span>STUDENT INFORMATION</span>
+          </div>
+        </div>
+        <div class="kcard-body">
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="info-label">Roll No.</span>
+              <span class="info-val" id="info-roll">—</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Enrollment No.</span>
+              <span class="info-val" id="info-enr">—</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Status</span>
+              <div><span class="status-badge" id="status-tag">PENDING</span></div>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Registration No.</span>
+              <span class="info-val info-val--highlight" id="info-reg">—</span>
+            </div>
+            <div class="info-item info-item--name">
+              <span class="info-label">Student Name</span>
+              <span class="info-val info-val--name" id="info-name">—</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Division &amp; Batch</span>
+              <span class="info-val" id="info-div-batch">—</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Points Earned</span>
+              <span class="info-val info-val--points" id="stat-points">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Metric Tiles -->
+      <div class="metrics-row">
+        <div class="metric-card metric-card--attended">
+          <div class="metric-icon blue">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
+          <div class="metric-info">
+            <span class="metric-title">TOTAL HOURS ATTENDED</span>
+            <span class="metric-num blue" id="stat-attended">0</span>
+            <span class="metric-sub" id="stat-of-total">of 0 hrs required</span>
+          </div>
+        </div>
+
+        <div class="metric-card metric-card--required">
+          <div class="metric-icon orange">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div>
+          <div class="metric-info">
+            <span class="metric-title">COMPENSATION REQUIRED</span>
+            <span class="metric-num orange" id="stat-comp-req">0</span>
+            <span class="metric-sub">Hours</span>
+          </div>
+        </div>
+
+        <div class="metric-card metric-card--completed">
+          <div class="metric-icon green">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="metric-info">
+            <span class="metric-title">COMPENSATION COMPLETED</span>
+            <span class="metric-num green" id="stat-comp-done">0</span>
+            <span class="metric-sub">Hours</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary Cards -->
+      <div class="two-col-row">
+        <!-- Attendance Summary -->
+        <div class="kcard">
+          <div class="kcard-header-simple">
+            <h3>ATTENDANCE SUMMARY</h3>
+          </div>
+          <div class="summary-body">
+            <div class="donut-wrap">
+              <svg class="donut-svg" viewBox="0 0 100 100">
+                <circle class="donut-bg" cx="50" cy="50" r="40" />
+                <circle class="donut-arc" id="donut-arc" cx="50" cy="50" r="40" stroke-dasharray="0 251.33" stroke-dashoffset="62.83" />
+              </svg>
+              <div class="donut-center">
+                <span class="donut-val" id="donut-pct">0%</span>
+                <span class="donut-sub">Attendance</span>
+              </div>
+            </div>
+            <div class="summary-meta">
+              <div class="smeta-row">
+                <span class="smeta-key">Total Hours Attended</span>
+                <span class="smeta-val" id="sum-attended">0</span>
+              </div>
+              <div class="smeta-row">
+                <span class="smeta-key">Total Hours Required</span>
+                <span class="smeta-val" id="sum-required">0</span>
+              </div>
+              <div class="smeta-row smeta-row--bold">
+                <span class="smeta-key">Attendance Percentage</span>
+                <span class="smeta-val bold-pct" id="sum-pct">0.00%</span>
+              </div>
+              <div class="legend-pills">
+                <span class="pill pill--green"><span class="pill-dot"></span> Attended: <strong id="leg-att">0</strong></span>
+                <span class="pill pill--gray"><span class="pill-dot"></span> Remaining: <strong id="leg-rem">0</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Compensation Progress -->
+        <div class="kcard">
+          <div class="kcard-header-simple">
+            <h3>COMPENSATION PROGRESS</h3>
+          </div>
+          <div class="comp-card-body">
+            <div class="comp-pct-display" id="comp-pct-big">0.00%</div>
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" id="comp-fill" style="width:0%"></div>
+            </div>
+            <div class="comp-stats-row">
+              <div class="cstat-box">
+                <span class="cstat-key">Completed</span>
+                <span class="cstat-val green" id="comp-done-num">0 Hours</span>
+              </div>
+              <div class="cstat-vdivider"></div>
+              <div class="cstat-box">
+                <span class="cstat-key">Required</span>
+                <span class="cstat-val orange" id="comp-req-num">0 Hours</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weekly Attendance -->
+      <div class="kcard">
+        <div class="kcard-topbar">
+          <div class="topbar-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <span>WEEKLY ATTENDANCE BREAKDOWN</span>
+          </div>
+        </div>
+        <div class="weekly-card-body">
+          <div class="week-grid" id="week-grid"></div>
+          <div class="weekly-legend">
+            <span class="leg-item"><span class="leg-dot green"></span> OK (&ge; 80%)</span>
+            <span class="leg-item"><span class="leg-dot yellow"></span> WARNING (&ge; 60% and &lt; 80%)</span>
+            <span class="leg-item"><span class="leg-dot red"></span> PENDING (&lt; 60%)</span>
+            <span class="leg-item"><span class="leg-dot gray"></span> NOT AVAILABLE</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notice -->
+      <div class="notice-card">
+        <div class="notice-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+        </div>
+        <div class="notice-content" id="notice-content">
+          <strong>Note:</strong> Attendance and compensation data is updated automatically from the official department spreadsheet. For any discrepancy, please contact your department coordinator.
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="actions-row">
+        <button type="button" class="btn btn--navy" onclick="window.print()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          PRINT RESULT
+        </button>
+        <button type="button" class="btn btn--secondary" onclick="resetSearch()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M2.5 16l1.2 1.8a10 10 0 0 0 18.8-4.3"/></svg>
+          SEARCH ANOTHER
+        </button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p class="footer-foet">Faculty of Engineering &amp; Technology (FOET)</p>
+      <p class="footer-copy">&copy; 2026 Atmiya University, Rajkot, Gujarat. All Rights Reserved.</p>
+    </div>
+  </footer>
+
+  <script src="/app.js?v=202608210200"></script>
+</body>
+</html>

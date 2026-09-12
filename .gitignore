@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+env/
+venv/
+.idea/
+.vscode/
+.DS_Store
+*.log
+.snapshots/
+atmiya-*.json
+service-account*.json
+*-credentials*.json
+*.pem
+*.key

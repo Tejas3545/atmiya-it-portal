@@ -1,0 +1,752 @@
+import os
+import re
+import json
+import time
+import threading
+import urllib.request
+from flask import Flask, jsonify, send_from_directory, request, Response
+from flask_cors import CORS
+import openpyxl
+
+# Load .env file automatically on local dev (Render ignores this, uses its own env panel)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not installed — env vars must be set manually
+
+app = Flask(__name__, static_folder="static", static_url_path="")
+CORS(app)
+
+# Wrap with WhiteNoise for rock-solid production static asset serving on Render
+try:
+    from whitenoise import WhiteNoise
+    app.wsgi_app = WhiteNoise(app.wsgi_app, root=os.path.join(os.path.dirname(__file__), "static"), prefix="")
+except ImportError:
+    pass
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPARTMENT REGISTRY
+# Each dept key maps to: display name, short code, color accent, data file path,
+# and the ENV var name that holds the Google Sheet URL.
+#
+# SECURITY NOTE: Google Sheet URLs are NEVER exposed to the frontend.
+# They live only in Render/Railway environment variables.
+# The server fetches raw Excel data, transforms it, and returns processed JSON
+# to students. Students only ever see /api/<dept>/student JSON responses.
+# ─────────────────────────────────────────────────────────────────────────────
+BASE = os.path.dirname(__file__)
+
+DEPARTMENTS = {
+    "it": {
+        "name":      "B.Tech Information Technology",
+        "short":     "IT",
+        "color":     "#1d4ed8",
+        "excel":     os.path.join(BASE, "data", "IT.xlsx"),
+        "excel_alt": os.path.join(BASE, "data", "IT.xlsx"),   # same, no root fallback
+        "env_var":   "GOOGLE_SHEET_URL_IT",
+        "default_sheet_url": (
+            os.environ.get("GOOGLE_SHEET_URL_IT")
+            or os.environ.get("IT")
+            or os.environ.get("GOOGLE_SHEET_URL")
+            or "https://docs.google.com/spreadsheets/d/1TCHWU28MbUThEFCrqB4iTuL6mbgV9VbP/edit"
+        ).strip(),
+    },
+    "cse": {
+        "name":      "B.Tech Computer Science & Engineering",
+        "short":     "CSE",
+        "color":     "#7c3aed",
+        "excel":     os.path.join(BASE, "data", "CSE.xlsx"),
+        "excel_alt": os.path.join(BASE, "data", "CSE.xlsx"),
+        "env_var":   "GOOGLE_SHEET_URL_CSE",
+        "default_sheet_url": (
+            os.environ.get("GOOGLE_SHEET_URL_CSE")
+            or os.environ.get("CSE")
+            or ""
+        ).strip(),
+    },
+    "civil": {
+        "name":      "B.Tech Civil Engineering",
+        "short":     "Civil",
+        "color":     "#b45309",
+        "excel":     os.path.join(BASE, "data", "Civil.xlsx"),
+        "excel_alt": os.path.join(BASE, "data", "Civil.xlsx"),
+        "env_var":   "GOOGLE_SHEET_URL_CIVIL",
+        "default_sheet_url": (
+            os.environ.get("GOOGLE_SHEET_URL_CIVIL")
+            or os.environ.get("Civil")
+            or os.environ.get("CIVIL")
+            or ""
+        ).strip(),
+    },
+    "mech": {
+        "name":      "B.Tech Mechanical Engineering",
+        "short":     "Mech",
+        "color":     "#b91c1c",
+        "excel":     os.path.join(BASE, "data", "Mechanical.xlsx"),
+        "excel_alt": os.path.join(BASE, "data", "Mechanical.xlsx"),
+        "env_var":   "GOOGLE_SHEET_URL_MECH",
+        "default_sheet_url": (
+            os.environ.get("GOOGLE_SHEET_URL_MECH")
+            or os.environ.get("Mechanical")
+            or os.environ.get("MECHANICAL")
+            or os.environ.get("MECH")
+            or ""
+        ).strip(),
+    },
+    "elec": {
+        "name":      "B.Tech Electrical Engineering",
+        "short":     "Elec",
+        "color":     "#047857",
+        "excel":     os.path.join(BASE, "data", "Electrical.xlsx"),
+        "excel_alt": os.path.join(BASE, "data", "Electrical.xlsx"),
+        "env_var":   "GOOGLE_SHEET_URL_ELEC",
+        "default_sheet_url": (
+            os.environ.get("GOOGLE_SHEET_URL_ELEC")
+            or os.environ.get("Electrical")
+            or os.environ.get("ELECTRICAL")
+            or os.environ.get("ELEC")
+            or ""
+        ).strip(),
+    },
+    "ce": {
+        "name":      "B.Tech Computer Engineering",
+        "short":     "CE",
+        "color":     "#0369a1",
+        "excel":     os.path.join(BASE, "data", "CE.xlsx"),
+        "excel_alt": os.path.join(BASE, "data", "CE.xlsx"),
+        "env_var":   "GOOGLE_SHEET_URL_CE",
+        "default_sheet_url": (
+            os.environ.get("GOOGLE_SHEET_URL_CE")
+            or os.environ.get("CE")
+            or ""
+        ).strip(),
+    },
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-department in-memory cache
+# ─────────────────────────────────────────────────────────────────────────────
+_caches = {
+    dept: {
+        "students":            [],
+        "available_semesters": [],
+        "last_modified":       0,
+        "loaded_at":           0,
+        "last_sync_check":     0,
+        "google_sheet_url":    info["default_sheet_url"],
+        "sync_status":         "Idle",
+    }
+    for dept, info in DEPARTMENTS.items()
+}
+_locks = {dept: threading.Lock() for dept in DEPARTMENTS}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+def get_export_url(raw_url):
+    """Convert any Google Sheets shareable link into a direct .xlsx download URL."""
+    if not raw_url:
+        return ""
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", raw_url)
+    if m:
+        sheet_id = m.group(1)
+        return f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx"
+    if "export?format=xlsx" in raw_url:
+        return raw_url
+    return raw_url
+
+
+def _get_service_account_token():
+    """
+    Load service account credentials from GOOGLE_SERVICE_ACCOUNT_JSON env var
+    or a local credentials JSON file, and return a Bearer token.
+    Returns None if not configured or invalid.
+    """
+    import glob
+    sa_info = None
+    sa_json_str = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+
+    if sa_json_str:
+        try:
+            sa_info = json.loads(sa_json_str)
+        except Exception as e:
+            print(f"[Service Account] Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
+    else:
+        creds_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+        if not creds_path:
+            candidates = glob.glob("atmiya-*.json") + glob.glob("service-account*.json")
+            for candidate in candidates:
+                if os.path.isfile(candidate):
+                    creds_path = candidate
+                    break
+        if creds_path and os.path.exists(creds_path):
+            try:
+                with open(creds_path, "r", encoding="utf-8") as f:
+                    sa_info = json.load(f)
+            except Exception as e:
+                print(f"[Service Account] Failed to read {creds_path}: {e}")
+
+    if not sa_info:
+        return None
+
+    try:
+        import google.oauth2.service_account as sa_module
+        import google.auth.transport.requests as ga_requests
+        creds = sa_module.Credentials.from_service_account_info(
+            sa_info,
+            scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        )
+        creds.refresh(ga_requests.Request())
+        return creds.token
+    except Exception as e:
+        print(f"[Service Account] Failed to get token: {e}")
+        return None
+
+
+def sync_google_sheet(dept_key, sheet_url=None):
+    """
+    Download live .xlsx from Google Sheets and save to data/<DEPT>.xlsx.
+
+    SECURITY:
+    - If service account credentials exist (file or env var) → authenticates as the service account.
+      The sheet can stay RESTRICTED (shared with foet-portal@atmiya-foet-portal.iam.gserviceaccount.com).
+    - Otherwise falls back to plain URL download (sheet must be 'Anyone with link can view').
+    - Sheet URL is NEVER sent to the browser.
+    """
+    cache     = _caches[dept_key]
+    dept_info = DEPARTMENTS[dept_key]
+    token     = _get_service_account_token()
+
+    target_url = sheet_url or cache.get("google_sheet_url") or dept_info["default_sheet_url"]
+
+    # Auto-discovery fallback: If no URL is explicitly configured, check Drive for files shared with SA
+    if not target_url and token:
+        try:
+            import requests as req_lib
+            r = req_lib.get(
+                "https://www.googleapis.com/drive/v3/files?q=trashed=false&fields=files(id,name,mimeType)",
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10
+            )
+            if r.status_code == 200:
+                files = r.json().get("files", [])
+                for f in files:
+                    fname = f.get("name", "").lower()
+                    if dept_key in fname or dept_info["short"].lower() in fname:
+                        target_url = f"https://docs.google.com/spreadsheets/d/{f['id']}/edit"
+                        cache["google_sheet_url"] = target_url
+                        print(f"[Sync] Auto-discovered Google Drive file '{f.get('name')}' ({f['id']}) for {dept_key}")
+                        break
+        except Exception as e:
+            print(f"[Sync] Auto-discovery error: {e}")
+
+    if not target_url:
+        cache["sync_status"] = "No Google Sheet URL configured"
+        return False, "No Google Sheet URL configured for this department."
+
+    export_url = get_export_url(target_url)
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", target_url)
+    sheet_id = m.group(1) if m else ""
+
+    try:
+        import requests as req_lib
+        content = None
+        status_code = None
+
+        if token:
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Accept": "*/*",
+            }
+            # 1. Try docs.google.com export
+            if export_url:
+                try:
+                    resp = req_lib.get(export_url, headers=headers, timeout=20)
+                    if resp.status_code == 200 and len(resp.content) > 1000:
+                        content = resp.content
+                        status_code = 200
+                    else:
+                        status_code = resp.status_code
+                except Exception:
+                    pass
+
+            # 2. Try Drive API alt=media (works if file is an uploaded Excel .xlsx file)
+            if (not content or len(content) <= 1000) and sheet_id:
+                try:
+                    url_media = f"https://www.googleapis.com/drive/v3/files/{sheet_id}?alt=media"
+                    resp = req_lib.get(url_media, headers=headers, timeout=20)
+                    if resp.status_code == 200 and len(resp.content) > 1000:
+                        content = resp.content
+                        status_code = 200
+                    elif not status_code:
+                        status_code = resp.status_code
+                except Exception:
+                    pass
+
+            # 3. Try Drive API export (works for native Google Sheets)
+            if (not content or len(content) <= 1000) and sheet_id:
+                try:
+                    url_export = f"https://www.googleapis.com/drive/v3/files/{sheet_id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    resp = req_lib.get(url_export, headers=headers, timeout=20)
+                    if resp.status_code == 200 and len(resp.content) > 1000:
+                        content = resp.content
+                        status_code = 200
+                    elif not status_code:
+                        status_code = resp.status_code
+                except Exception:
+                    pass
+
+        else:
+            # ── Fallback: plain URL download (requires public sheet) ────────
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Accept": "*/*",
+            }
+            req_obj = urllib.request.Request(export_url, headers=headers)
+            with urllib.request.urlopen(req_obj, timeout=15) as response:
+                content = response.read()
+            status_code = 200
+
+        if status_code in (403, 404):
+            err_msg = (
+                f"Google Drive returned HTTP {status_code}. "
+                f"Make sure the sheet/file is shared with: foet-portal@atmiya-foet-portal.iam.gserviceaccount.com"
+            )
+            cache["sync_status"] = f"Failed: HTTP {status_code} (Share with service account)"
+            return False, err_msg
+
+        if status_code != 200 or not content:
+            err_msg = f"Could not download Google Sheet: HTTP {status_code}"
+            cache["sync_status"] = f"Failed: HTTP {status_code}"
+            return False, err_msg
+
+        if len(content) > 1000:
+            excel_path = dept_info["excel"]
+            os.makedirs(os.path.dirname(excel_path), exist_ok=True)
+            with open(excel_path, "wb") as f:
+                f.write(content)
+            now_str = time.strftime("%H:%M:%S")
+            cache["sync_status"] = f"Synced live ({len(content)} bytes at {now_str})"
+            return True, f"Live Google Sheet synced successfully ({len(content)} bytes)!"
+        else:
+            cache["sync_status"] = "Failed: Downloaded file is too small or invalid"
+            return False, "Downloaded file is too small or invalid."
+
+    except Exception as e:
+        cache["sync_status"] = f"Sync failed: {str(e)}"
+        return False, f"Could not download Google Sheet: {str(e)}"
+
+
+def extract_semester_from_title(title):
+    """Pull semester number out of the sheet title row."""
+    if not title:
+        return None
+    m = re.search(r"SEMESTER\s*[-–]\s*(\d+)", str(title), re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def parse_excel(dept_key):
+    """
+    Parse the Excel file for a department row by row.
+    A single sheet can contain multiple semester sections — each section starts
+    with a title row like "B.TECH. INFORMATION TECHNOLOGY SEMESTER - 5 ATTENDANCE REPORT".
+    """
+    dept_info = DEPARTMENTS[dept_key]
+    excel_path = dept_info["excel"] if os.path.exists(dept_info["excel"]) else dept_info["excel_alt"]
+
+    if not os.path.exists(excel_path):
+        return [], []
+
+    wb = openpyxl.load_workbook(excel_path, data_only=True)
+    all_students = []
+    semesters_found = set()
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        rows = list(ws.iter_rows(values_only=True))
+
+        current_semester = None
+        in_data = False
+
+        for row in rows:
+            first_cell = str(row[0]).strip() if row[0] is not None else ""
+
+            sem = extract_semester_from_title(first_cell)
+            if sem:
+                current_semester = sem
+                semesters_found.add(sem)
+                in_data = False
+                continue
+
+            if row[0] == "Div" and row[1] == "Batch":
+                in_data = True
+                continue
+
+            if current_semester is None or not in_data:
+                continue
+
+            div = row[0]
+            name = row[5]
+            if not name or div in (None, "Div", ""):
+                continue
+
+            try:
+                roll_no = int(row[2]) if row[2] is not None else None
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(name, str):
+                continue
+
+            try:
+                reg_no = str(int(row[3])) if row[3] else ""
+                enr_no = str(int(row[4])) if row[4] else ""
+            except (ValueError, TypeError):
+                continue
+
+            status        = row[6]  if row[6]  is not None else "N/A"
+            points        = row[7]  if row[7]  is not None else 0
+            total_hours   = row[8]  if row[8]  is not None else 0
+            comp_required = row[9]  if row[9]  is not None else 0
+            comp_completed= row[10] if row[10] is not None else 0
+
+            weeks = []
+            for w in range(11, 26):
+                val = row[w] if w < len(row) else None
+                if val is not None:
+                    try:
+                        pct = round(float(val) * 100, 2)
+                    except (ValueError, TypeError):
+                        weeks.append({"week": w - 10, "attendance": None, "status": "NOT_AVAILABLE"})
+                        continue
+                    if pct >= 80:
+                        wk_status = "OK"
+                    elif pct >= 60:
+                        wk_status = "WARNING"
+                    else:
+                        wk_status = "PENDING"
+                    weeks.append({"week": w - 10, "attendance": pct, "status": wk_status})
+                else:
+                    weeks.append({"week": w - 10, "attendance": None, "status": "NOT_AVAILABLE"})
+
+            attended = [w for w in weeks if w["attendance"] is not None]
+            avg_att  = round(sum(w["attendance"] for w in attended) / len(attended), 2) if attended else 0.0
+            total_req = 24 * len(attended) if attended else 0
+
+            all_students.append({
+                "department":            dept_info["short"],
+                "semester":              current_semester,
+                "div":                   str(div).strip(),
+                "batch":                 str(row[1]).strip() if row[1] else "",
+                "roll_no":               roll_no,
+                "reg_no":                reg_no,
+                "enr_no":                enr_no,
+                "name":                  name.strip(),
+                "status":                str(status).strip(),
+                "points":                int(points) if points else 0,
+                "total_hours_attended":  int(total_hours) if total_hours else 0,
+                "total_hours_required":  total_req,
+                "comp_required":         int(comp_required) if comp_required else 0,
+                "comp_completed":        int(comp_completed) if comp_completed else 0,
+                "attendance_pct":        avg_att,
+                "weeks":                 weeks,
+            })
+
+    return all_students, sorted(semesters_found)
+
+
+def get_students(dept_key):
+    """Return cached students for a department, refreshing if Excel changed."""
+    now   = time.time()
+    cache = _caches[dept_key]
+    info  = DEPARTMENTS[dept_key]
+
+    # Auto-sync from Google Sheets every 60 s if URL is configured
+    if cache.get("google_sheet_url") and (now - cache["last_sync_check"] > 60):
+        cache["last_sync_check"] = now
+        threading.Thread(target=sync_google_sheet, args=(dept_key,), daemon=True).start()
+
+    excel_path = info["excel"] if os.path.exists(info["excel"]) else info["excel_alt"]
+    try:
+        mtime = os.path.getmtime(excel_path)
+    except OSError:
+        mtime = 0
+
+    with _locks[dept_key]:
+        if mtime != cache["last_modified"] or not cache["students"]:
+            students, semesters = parse_excel(dept_key)
+            cache["students"]            = students
+            cache["available_semesters"] = semesters
+            cache["last_modified"]       = mtime
+            cache["loaded_at"]           = time.time()
+
+    return cache["students"], cache["available_semesters"]
+
+
+def has_data(dept_key):
+    """Return True if a data file exists for this department."""
+    info = DEPARTMENTS[dept_key]
+    return os.path.exists(info["excel"]) or os.path.exists(info["excel_alt"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STATIC PAGE ROUTES
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route("/")
+def index():
+    return send_from_directory("static", "index.html")
+
+
+# One route per department — all serve the same dept.html template
+DEPT_ROUTES = list(DEPARTMENTS.keys())
+
+@app.route("/<dept_slug>")
+def dept_page(dept_slug):
+    if dept_slug in DEPARTMENTS:
+        return send_from_directory("static", "dept.html")
+    return "Page not found", 404
+
+
+@app.route("/style.css")
+def css():
+    return send_from_directory("static", "style.css")
+
+@app.route("/app.js")
+def js():
+    return send_from_directory("static", "app.js")
+
+@app.route("/master.js")
+def master_js():
+    return send_from_directory("static", "master.js")
+
+@app.route("/atmiyalogonaac.png")
+def naac_logo():
+    return send_from_directory("static", "atmiyalogonaac.png")
+
+@app.route("/favicon.ico")
+def favicon():
+    return Response(status=204)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# API: Master department list
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route("/api/departments")
+def api_departments():
+    result = []
+    for key, info in DEPARTMENTS.items():
+        data_available = has_data(key)
+        cache = _caches[key]
+        has_sync = bool(cache.get("google_sheet_url") or info.get("default_sheet_url"))
+        result.append({
+            "key":             key,
+            "name":            info["name"],
+            "short":           info["short"],
+            "color":           info["color"],
+            "url":             f"/{key}",
+            "data_available":  data_available,
+            "sync_configured": has_sync,
+        })
+    return jsonify({"departments": result})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# API: Per-department endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route("/api/<dept>/semesters")
+def api_semesters(dept):
+    dept = dept.lower()
+    if dept not in DEPARTMENTS:
+        return jsonify({"error": f"Unknown department: {dept}"}), 404
+    if not has_data(dept):
+        return jsonify({"department": DEPARTMENTS[dept]["short"], "semesters": [], "data_available": False})
+    _, available = get_students(dept)
+    return jsonify({"department": DEPARTMENTS[dept]["short"], "semesters": available, "data_available": True})
+
+
+@app.route("/api/<dept>/student")
+def api_student(dept):
+    dept = dept.lower()
+    if dept not in DEPARTMENTS:
+        return jsonify({"error": f"Unknown department: {dept}"}), 404
+
+    if not has_data(dept):
+        return jsonify({
+            "error": f"Student record not found. Please verify your Registration / Enrollment number and semester, or contact your department coordinator."
+        }), 404
+
+    query          = request.args.get("q", "").strip()
+    semester_param = request.args.get("semester", "").strip()
+
+    if not query:
+        return jsonify({"error": "Please enter your Registration or Enrollment number."}), 400
+    if not semester_param:
+        return jsonify({"error": "Please select your semester."}), 400
+
+    try:
+        semester_num = int(semester_param)
+    except ValueError:
+        return jsonify({"error": "Invalid semester selected."}), 400
+
+    students, available_semesters = get_students(dept)
+    dept_name = DEPARTMENTS[dept]["name"]
+
+    if semester_num not in available_semesters:
+        return jsonify({
+            "error": f"Semester {semester_num} data is not available for {dept_name}. "
+                     f"Available: {', '.join(str(s) for s in available_semesters)}."
+        }), 404
+
+    found = None
+    for s in students:
+        if s["semester"] != semester_num:
+            continue
+        if s["reg_no"] == query or s["enr_no"] == query:
+            found = s
+            break
+
+    if not found:
+        other = next(
+            (s for s in students if (s["reg_no"] == query or s["enr_no"] == query)
+             and s["semester"] != semester_num),
+            None
+        )
+        if other:
+            return jsonify({
+                "error": f"This number belongs to Semester {other['semester']}, "
+                         f"not Semester {semester_num}. Please select the correct semester."
+            }), 404
+        return jsonify({"error": f"No student found with this number in {dept_name}."}), 404
+
+    return jsonify(found)
+
+
+@app.route("/api/<dept>/sync", methods=["GET", "POST"])
+def api_sync(dept):
+    dept = dept.lower()
+    if dept not in DEPARTMENTS:
+        return jsonify({"error": f"Unknown department: {dept}"}), 404
+
+    cache = _caches[dept]
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        new_url = body.get("url") or request.args.get("url", "").strip()
+        if new_url:
+            cache["google_sheet_url"] = new_url
+
+    url = cache.get("google_sheet_url")
+    ok, msg = sync_google_sheet(dept, url)
+    if ok:
+        with _locks[dept]:
+            students, semesters = parse_excel(dept)
+            cache["students"]            = students
+            cache["available_semesters"] = semesters
+            cache["loaded_at"]           = time.time()
+        return jsonify({
+            "status":         "success",
+            "message":        msg,
+            "total_students": len(cache["students"]),
+            "semesters":      cache["available_semesters"],
+        })
+    else:
+        # Gracefully handle unconfigured sheet without returning a noisy HTTP 400
+        if "No Google Sheet URL" in msg:
+            return jsonify({
+                "status":         "not_configured",
+                "message":        f"No Google Sheet configured for {dept.upper()}. Serving local attendance data.",
+                "total_students": len(cache["students"]),
+                "semesters":      cache["available_semesters"],
+            }), 200
+        return jsonify({"status": "error", "message": msg}), 502
+
+
+@app.route("/api/<dept>/status")
+def api_status(dept):
+    dept = dept.lower()
+    if dept not in DEPARTMENTS:
+        return jsonify({"error": f"Unknown department: {dept}"}), 404
+    students, semesters = get_students(dept) if has_data(dept) else ([], [])
+    cache = _caches[dept]
+    return jsonify({
+        "department":            DEPARTMENTS[dept]["short"],
+        "name":                  DEPARTMENTS[dept]["name"],
+        "data_available":        has_data(dept),
+        "total_students":        len(students),
+        "available_semesters":   semesters,
+        "loaded_at":             cache["loaded_at"],
+        "google_sheet_url":      cache.get("google_sheet_url", ""),
+        "sync_status":           cache.get("sync_status", ""),
+        "service_account_email": "foet-portal@atmiya-foet-portal.iam.gserviceaccount.com",
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backward-compatible aliases (keep old IT-only URLs working)
+# ─────────────────────────────────────────────────────────────────────────────
+@app.route("/api/semesters")
+def compat_semesters():
+    return api_semesters("it")
+
+@app.route("/api/student")
+def compat_student():
+    return api_student("it")
+
+@app.route("/api/sync", methods=["GET", "POST"])
+def compat_sync():
+    return api_sync("it")
+
+@app.route("/api/status")
+def compat_status():
+    return api_status("it")
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cache-busting: rewrite ?v= in every HTML response so browsers always
+# load the latest JS/CSS without needing a manual hard-refresh.
+# ─────────────────────────────────────────────────────────────────────────────
+_ASSET_VERSION = str(int(time.time()))
+
+@app.after_request
+def bust_cache(response):
+    if "text/html" in response.content_type:
+        try:
+            body = response.get_data(as_text=True)
+            body = re.sub(r'\?v=\d+', f'?v={_ASSET_VERSION}', body)
+            response.set_data(body)
+        except RuntimeError:
+            pass  # WhiteNoise passthrough mode — skip
+    return response
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STARTUP SYNC
+# On server boot, immediately sync all departments that have a sheet URL
+# configured. Runs in background threads so startup isn't blocked.
+# ─────────────────────────────────────────────────────────────────────────────
+def _startup_sync():
+    """Wait a moment for Flask to fully start, then sync all configured depts."""
+    time.sleep(5)
+    print("[Startup] Beginning initial sync for all configured departments...")
+    for dept_key, info in DEPARTMENTS.items():
+        url = _caches[dept_key].get("google_sheet_url") or info.get("default_sheet_url", "")
+        if url:
+            print(f"[Startup] Syncing {info['short']} ({dept_key})...")
+            ok, msg = sync_google_sheet(dept_key)
+            print(f"[Startup] {info['short']}: {'✓' if ok else '✗'} {msg}")
+        else:
+            print(f"[Startup] {info['short']}: Skipped (no sheet URL configured)")
+
+
+_startup_thread = threading.Thread(target=_startup_sync, daemon=True)
+_startup_thread.start()
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    print(f"Starting Atmiya University — FOET Attendance Portal on port {port}")
+    app.run(host="0.0.0.0", port=port, debug=False)

@@ -1,0 +1,8 @@
+Flask==3.0.3
+openpyxl==3.1.2
+flask-cors==4.0.0
+gunicorn==21.2.0
+whitenoise==6.6.0
+python-dotenv==1.0.1
+requests==2.31.0
+google-auth>=2.48.1

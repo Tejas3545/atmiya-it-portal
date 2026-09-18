@@ -6,7 +6,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 const DEPT_META = {
   it:    { name: "B.Tech Information Technology",            short: "IT" },
-  cse:   { name: "B.Tech Computer Science & Engineering",    short: "CSE" },
   civil: { name: "B.Tech Civil Engineering",                 short: "Civil" },
   mech:  { name: "B.Tech Mechanical Engineering",            short: "Mech" },
   elec:  { name: "B.Tech Electrical Engineering",            short: "Elec" },

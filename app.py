@@ -400,29 +400,34 @@ def parse_excel(dept_key):
             comp_completed= row[10] if row[10] is not None else 0
 
             weeks = []
-            # Dynamic: read every column from index 11 onwards as a week.
-            # This means the portal automatically picks up week 12, 13, 14...
-            # as the Dean adds new week data to the sheet.
+            # Dynamic: read ALL columns from 11 onwards as week data.
+            # Never break on an empty cell — gaps in the sheet are valid.
+            # After reading, strip trailing NOT_AVAILABLE entries so future
+            # empty weeks don't show as N/A.
             week_num = 1
             for w in range(11, len(row)):
                 val = row[w]
                 if val is None:
-                    # Stop at the first fully-empty column — no more weeks beyond this
-                    break
-                try:
-                    pct = round(float(val) * 100, 2)
-                except (ValueError, TypeError):
                     weeks.append({"week": week_num, "attendance": None, "status": "NOT_AVAILABLE"})
-                    week_num += 1
-                    continue
-                if pct >= 80:
-                    wk_status = "OK"
-                elif pct >= 60:
-                    wk_status = "WARNING"
                 else:
-                    wk_status = "PENDING"
-                weeks.append({"week": week_num, "attendance": pct, "status": wk_status})
+                    try:
+                        pct = round(float(val) * 100, 2)
+                    except (ValueError, TypeError):
+                        weeks.append({"week": week_num, "attendance": None, "status": "NOT_AVAILABLE"})
+                        week_num += 1
+                        continue
+                    if pct >= 80:
+                        wk_status = "OK"
+                    elif pct >= 60:
+                        wk_status = "WARNING"
+                    else:
+                        wk_status = "PENDING"
+                    weeks.append({"week": week_num, "attendance": pct, "status": wk_status})
                 week_num += 1
+
+            # Strip trailing NOT_AVAILABLE weeks (future weeks not yet updated)
+            while weeks and weeks[-1]["status"] == "NOT_AVAILABLE":
+                weeks.pop()
 
             attended = [w for w in weeks if w["attendance"] is not None]
             avg_att  = round(sum(w["attendance"] for w in attended) / len(attended), 2) if attended else 0.0

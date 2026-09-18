@@ -43,25 +43,12 @@ DEPARTMENTS = {
         "short":     "IT",
         "color":     "#1d4ed8",
         "excel":     os.path.join(BASE, "data", "IT.xlsx"),
-        "excel_alt": os.path.join(BASE, "data", "IT.xlsx"),   # same, no root fallback
-        "env_var":   "GOOGLE_SHEET_URL_IT",
+        "excel_alt": os.path.join(BASE, "data", "IT.xlsx"),
+        "env_var":   "IT",
         "default_sheet_url": (
-            os.environ.get("GOOGLE_SHEET_URL_IT")
-            or os.environ.get("IT")
+            os.environ.get("IT")
+            or os.environ.get("GOOGLE_SHEET_URL_IT")
             or os.environ.get("GOOGLE_SHEET_URL")
-            or "https://docs.google.com/spreadsheets/d/1TCHWU28MbUThEFCrqB4iTuL6mbgV9VbP/edit"
-        ).strip(),
-    },
-    "cse": {
-        "name":      "B.Tech Computer Science & Engineering",
-        "short":     "CSE",
-        "color":     "#7c3aed",
-        "excel":     os.path.join(BASE, "data", "CSE.xlsx"),
-        "excel_alt": os.path.join(BASE, "data", "CSE.xlsx"),
-        "env_var":   "GOOGLE_SHEET_URL_CSE",
-        "default_sheet_url": (
-            os.environ.get("GOOGLE_SHEET_URL_CSE")
-            or os.environ.get("CSE")
             or ""
         ).strip(),
     },
@@ -71,10 +58,10 @@ DEPARTMENTS = {
         "color":     "#b45309",
         "excel":     os.path.join(BASE, "data", "Civil.xlsx"),
         "excel_alt": os.path.join(BASE, "data", "Civil.xlsx"),
-        "env_var":   "GOOGLE_SHEET_URL_CIVIL",
+        "env_var":   "Civil",
         "default_sheet_url": (
-            os.environ.get("GOOGLE_SHEET_URL_CIVIL")
-            or os.environ.get("Civil")
+            os.environ.get("Civil")
+            or os.environ.get("GOOGLE_SHEET_URL_CIVIL")
             or os.environ.get("CIVIL")
             or ""
         ).strip(),
@@ -85,11 +72,10 @@ DEPARTMENTS = {
         "color":     "#b91c1c",
         "excel":     os.path.join(BASE, "data", "Mechanical.xlsx"),
         "excel_alt": os.path.join(BASE, "data", "Mechanical.xlsx"),
-        "env_var":   "GOOGLE_SHEET_URL_MECH",
+        "env_var":   "Mechanical",
         "default_sheet_url": (
-            os.environ.get("GOOGLE_SHEET_URL_MECH")
-            or os.environ.get("Mechanical")
-            or os.environ.get("MECHANICAL")
+            os.environ.get("Mechanical")
+            or os.environ.get("GOOGLE_SHEET_URL_MECH")
             or os.environ.get("MECH")
             or ""
         ).strip(),
@@ -100,11 +86,10 @@ DEPARTMENTS = {
         "color":     "#047857",
         "excel":     os.path.join(BASE, "data", "Electrical.xlsx"),
         "excel_alt": os.path.join(BASE, "data", "Electrical.xlsx"),
-        "env_var":   "GOOGLE_SHEET_URL_ELEC",
+        "env_var":   "Electrical",
         "default_sheet_url": (
-            os.environ.get("GOOGLE_SHEET_URL_ELEC")
-            or os.environ.get("Electrical")
-            or os.environ.get("ELECTRICAL")
+            os.environ.get("Electrical")
+            or os.environ.get("GOOGLE_SHEET_URL_ELEC")
             or os.environ.get("ELEC")
             or ""
         ).strip(),
@@ -115,14 +100,15 @@ DEPARTMENTS = {
         "color":     "#0369a1",
         "excel":     os.path.join(BASE, "data", "CE.xlsx"),
         "excel_alt": os.path.join(BASE, "data", "CE.xlsx"),
-        "env_var":   "GOOGLE_SHEET_URL_CE",
+        "env_var":   "CE",
         "default_sheet_url": (
-            os.environ.get("GOOGLE_SHEET_URL_CE")
-            or os.environ.get("CE")
+            os.environ.get("CE")
+            or os.environ.get("GOOGLE_SHEET_URL_CE")
             or ""
         ).strip(),
     },
 }
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Per-department in-memory cache
@@ -414,23 +400,29 @@ def parse_excel(dept_key):
             comp_completed= row[10] if row[10] is not None else 0
 
             weeks = []
-            for w in range(11, 26):
-                val = row[w] if w < len(row) else None
-                if val is not None:
-                    try:
-                        pct = round(float(val) * 100, 2)
-                    except (ValueError, TypeError):
-                        weeks.append({"week": w - 10, "attendance": None, "status": "NOT_AVAILABLE"})
-                        continue
-                    if pct >= 80:
-                        wk_status = "OK"
-                    elif pct >= 60:
-                        wk_status = "WARNING"
-                    else:
-                        wk_status = "PENDING"
-                    weeks.append({"week": w - 10, "attendance": pct, "status": wk_status})
+            # Dynamic: read every column from index 11 onwards as a week.
+            # This means the portal automatically picks up week 12, 13, 14...
+            # as the Dean adds new week data to the sheet.
+            week_num = 1
+            for w in range(11, len(row)):
+                val = row[w]
+                if val is None:
+                    # Stop at the first fully-empty column — no more weeks beyond this
+                    break
+                try:
+                    pct = round(float(val) * 100, 2)
+                except (ValueError, TypeError):
+                    weeks.append({"week": week_num, "attendance": None, "status": "NOT_AVAILABLE"})
+                    week_num += 1
+                    continue
+                if pct >= 80:
+                    wk_status = "OK"
+                elif pct >= 60:
+                    wk_status = "WARNING"
                 else:
-                    weeks.append({"week": w - 10, "attendance": None, "status": "NOT_AVAILABLE"})
+                    wk_status = "PENDING"
+                weeks.append({"week": week_num, "attendance": pct, "status": wk_status})
+                week_num += 1
 
             attended = [w for w in weeks if w["attendance"] is not None]
             avg_att  = round(sum(w["attendance"] for w in attended) / len(attended), 2) if attended else 0.0

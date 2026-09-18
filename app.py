@@ -635,29 +635,36 @@ def api_sync(dept):
             cache["google_sheet_url"] = new_url
 
     url = cache.get("google_sheet_url")
-    ok, msg = sync_google_sheet(dept, url)
-    if ok:
-        with _locks[dept]:
-            students, semesters = parse_excel(dept)
-            cache["students"]            = students
-            cache["available_semesters"] = semesters
-            cache["loaded_at"]           = time.time()
+    if not url:
         return jsonify({
-            "status":         "success",
-            "message":        msg,
-            "total_students": len(cache["students"]),
-            "semesters":      cache["available_semesters"],
-        })
-    else:
-        # Gracefully handle unconfigured sheet without returning a noisy HTTP 400
-        if "No Google Sheet URL" in msg:
-            return jsonify({
-                "status":         "not_configured",
-                "message":        f"No Google Sheet configured for {dept.upper()}. Serving local attendance data.",
-                "total_students": len(cache["students"]),
-                "semesters":      cache["available_semesters"],
-            }), 200
-        return jsonify({"status": "error", "message": msg}), 502
+            "status":         "not_configured",
+            "message":        f"No Google Sheet configured for {dept.upper()}. Serving local data.",
+            "total_students": len(cache.get("students", [])),
+            "semesters":      cache.get("available_semesters", []),
+        }), 200
+
+    # Run in background — avoid Render's 30 s request timeout
+    def _bg_sync():
+        ok, msg = sync_google_sheet(dept, url)
+        if ok:
+            with _locks[dept]:
+                students, semesters = parse_excel(dept)
+                cache["students"]            = students
+                cache["available_semesters"] = semesters
+                cache["loaded_at"]           = time.time()
+            cache["sync_status"] = f"Synced OK at {time.strftime('%H:%M:%S')}"
+        else:
+            cache["sync_status"] = f"Sync failed: {msg}"
+
+    threading.Thread(target=_bg_sync, daemon=True).start()
+
+    return jsonify({
+        "status":         "started",
+        "message":        "Sync running in background — fresh data ready in ~10 s.",
+        "total_students": len(cache.get("students", [])),
+        "semesters":      cache.get("available_semesters", []),
+    })
+
 
 
 @app.route("/api/<dept>/status")

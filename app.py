@@ -182,7 +182,10 @@ def _get_service_account_token():
         import google.auth.transport.requests as ga_requests
         creds = sa_module.Credentials.from_service_account_info(
             sa_info,
-            scopes=["https://www.googleapis.com/auth/drive.readonly"]
+            scopes=[
+                "https://www.googleapis.com/auth/drive.readonly",
+                "https://www.googleapis.com/auth/spreadsheets.readonly",
+            ]
         )
         creds.refresh(ga_requests.Request())
         return creds.token
@@ -246,10 +249,15 @@ def sync_google_sheet(dept_key, sheet_url=None):
                 "Authorization": f"Bearer {token}",
                 "Accept": "*/*",
             }
-            # 1. Try docs.google.com export
-            if export_url:
+
+            # 1. Drive API export — correct method for service accounts on native Google Sheets
+            if sheet_id:
                 try:
-                    resp = req_lib.get(export_url, headers=headers, timeout=20)
+                    url_export = (
+                        f"https://www.googleapis.com/drive/v3/files/{sheet_id}/export"
+                        f"?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    resp = req_lib.get(url_export, headers=headers, timeout=30)
                     if resp.status_code == 200 and len(resp.content) > 1000:
                         content = resp.content
                         status_code = 200
@@ -258,24 +266,23 @@ def sync_google_sheet(dept_key, sheet_url=None):
                 except Exception:
                     pass
 
-            # 2. Try Drive API alt=media (works if file is an uploaded Excel .xlsx file)
-            if (not content or len(content) <= 1000) and sheet_id:
+            # 2. docs.google.com export URL (fallback)
+            if (not content or len(content) <= 1000) and export_url:
                 try:
-                    url_media = f"https://www.googleapis.com/drive/v3/files/{sheet_id}?alt=media"
-                    resp = req_lib.get(url_media, headers=headers, timeout=20)
+                    resp = req_lib.get(export_url, headers=headers, timeout=30)
                     if resp.status_code == 200 and len(resp.content) > 1000:
                         content = resp.content
                         status_code = 200
-                    elif not status_code:
+                    else:
                         status_code = resp.status_code
                 except Exception:
                     pass
 
-            # 3. Try Drive API export (works for native Google Sheets)
+            # 3. Drive API alt=media (for uploaded xlsx files, not native Sheets)
             if (not content or len(content) <= 1000) and sheet_id:
                 try:
-                    url_export = f"https://www.googleapis.com/drive/v3/files/{sheet_id}/export?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    resp = req_lib.get(url_export, headers=headers, timeout=20)
+                    url_media = f"https://www.googleapis.com/drive/v3/files/{sheet_id}?alt=media"
+                    resp = req_lib.get(url_media, headers=headers, timeout=30)
                     if resp.status_code == 200 and len(resp.content) > 1000:
                         content = resp.content
                         status_code = 200

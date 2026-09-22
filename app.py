@@ -4,7 +4,7 @@ import json
 import time
 import threading
 import urllib.request
-from flask import Flask, jsonify, send_from_directory, request, Response
+from flask import Flask, jsonify, send_from_directory, request, Response, session, redirect
 from flask_cors import CORS
 import openpyxl
 
@@ -17,6 +17,12 @@ except ImportError:
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "atmiya-foet-admin-secret-2024-xK9mP")
+
+# Admin credentials (set in Render env vars for production)
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "foet2024")
+
 
 # Wrap with WhiteNoise for rock-solid production static asset serving on Render
 try:
@@ -126,6 +132,156 @@ _caches = {
     for dept, info in DEPARTMENTS.items()
 }
 _locks = {dept: threading.Lock() for dept in DEPARTMENTS}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FOET MASTER SHEET (admin dashboard only)
+# ─────────────────────────────────────────────────────────────────────────────
+_FOET_EXCEL  = os.path.join(BASE, "data", "FoET.xlsx")
+_FOET_URL    = os.environ.get("FOET_MASTER_SHEET", "").strip()
+_foet_cache  = {"data": None, "sync_status": "Idle", "loaded_at": 0}
+_foet_lock   = threading.Lock()
+
+
+def parse_foet_excel():
+    """Parse FoET.xlsx and return structured data for the admin dashboard."""
+    if not os.path.exists(_FOET_EXCEL):
+        return None
+
+    wb  = openpyxl.load_workbook(_FOET_EXCEL, data_only=True)
+    ws  = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
+    rows = list(ws.iter_rows(values_only=True))
+
+    # Find header row (contains "Department")
+    header_idx = None
+    for i, row in enumerate(rows):
+        if any(str(v or "").strip() == "Department" for v in row):
+            header_idx = i
+            break
+    if header_idx is None:
+        return None
+
+    header = rows[header_idx]
+
+    # Week column indices
+    week_cols = [(i, str(v).strip()) for i, v in enumerate(header)
+                 if v and str(v).strip().startswith("Week")]
+
+    result_rows = []
+    current_dept = None
+
+    for row in rows[header_idx + 1:]:
+        dept_val  = row[1] if len(row) > 1 else None
+        prog_val  = row[2] if len(row) > 2 else None
+        sem_val   = row[3] if len(row) > 3 else None
+        link_val  = row[4] if len(row) > 4 else None
+        count_val = row[5] if len(row) > 5 else None
+        stat_val  = row[6] if len(row) > 6 else None
+
+        # Track current department (merged cells)
+        if dept_val and str(dept_val).strip() not in ("", "---"):
+            current_dept = str(dept_val).strip()
+
+        if not current_dept or not link_val or not count_val:
+            continue
+
+        try:
+            total = int(float(str(count_val)))
+        except (ValueError, TypeError):
+            continue
+        if total <= 0:
+            continue
+
+        weeks = []
+        for col_idx, _ in week_cols:
+            val = row[col_idx] if col_idx < len(row) else None
+            try:
+                weeks.append(round(float(val) * 100, 2))
+            except (TypeError, ValueError):
+                weeks.append(None)
+
+        # Strip trailing None and zeros (future weeks not filled yet)
+        while weeks and (weeks[-1] is None or weeks[-1] == 0.0):
+            weeks.pop()
+
+        valid = [w for w in weeks if w is not None and w > 0]
+        avg   = round(sum(valid) / len(valid), 2) if valid else 0
+
+        try:
+            sem = int(float(str(sem_val)))
+        except (TypeError, ValueError):
+            sem = 0
+
+        result_rows.append({
+            "department": current_dept,
+            "program":    str(prog_val or current_dept).strip(),
+            "semester":   sem,
+            "link":       str(link_val).strip(),
+            "total":      total,
+            "status":     str(stat_val or "").strip(),
+            "weeks":      weeks,
+            "avg":        avg,
+        })
+
+    total_students = sum(r["total"] for r in result_rows)
+    all_avgs       = [r["avg"] for r in result_rows if r["avg"] > 0]
+    overall_avg    = round(sum(all_avgs) / len(all_avgs), 2) if all_avgs else 0
+    below_60       = sum(1 for r in result_rows if 0 < r["avg"] < 60)
+    week_labels    = [w[1] for w in week_cols]
+
+    return {
+        "rows":            result_rows,
+        "week_labels":     week_labels,
+        "total_students":  total_students,
+        "overall_avg":     overall_avg,
+        "below_60_count":  below_60,
+    }
+
+
+def _sync_foet_bg():
+    """Background thread: download master sheet and reload cache."""
+    token = _get_service_account_token()
+    if not _FOET_URL or not token:
+        with _foet_lock:
+            _foet_cache["sync_status"] = "No URL or service account configured"
+        return
+
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", _FOET_URL)
+    sheet_id = m.group(1) if m else ""
+
+    try:
+        import requests as req_lib
+        headers = {"Authorization": f"Bearer {token}", "Accept": "*/*"}
+        content = None
+
+        if sheet_id:
+            url = (f"https://www.googleapis.com/drive/v3/files/{sheet_id}/export"
+                   f"?mimeType=application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            resp = req_lib.get(url, headers=headers, timeout=30)
+            if resp.status_code == 200 and len(resp.content) > 1000:
+                content = resp.content
+
+        if not content:
+            export_url = get_export_url(_FOET_URL)
+            resp = req_lib.get(export_url, headers=headers, timeout=30)
+            if resp.status_code == 200 and len(resp.content) > 1000:
+                content = resp.content
+
+        if content:
+            os.makedirs(os.path.dirname(_FOET_EXCEL), exist_ok=True)
+            with open(_FOET_EXCEL, "wb") as f:
+                f.write(content)
+            data = parse_foet_excel()
+            with _foet_lock:
+                _foet_cache["data"]        = data
+                _foet_cache["loaded_at"]   = time.time()
+                _foet_cache["sync_status"] = f"Synced at {time.strftime('%H:%M:%S')}"
+        else:
+            with _foet_lock:
+                _foet_cache["sync_status"] = "Sync failed: could not download"
+    except Exception as e:
+        with _foet_lock:
+            _foet_cache["sync_status"] = f"Sync error: {e}"
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -755,6 +911,87 @@ def _startup_sync():
 
 _startup_thread = threading.Thread(target=_startup_sync, daemon=True)
 _startup_thread.start()
+
+# Also seed the FOET cache from the local Excel on startup
+def _load_foet_on_boot():
+    time.sleep(6)
+    data = parse_foet_excel()
+    if data:
+        with _foet_lock:
+            _foet_cache["data"]      = data
+            _foet_cache["loaded_at"] = time.time()
+            _foet_cache["sync_status"] = "Loaded from file"
+    if _FOET_URL:
+        threading.Thread(target=_sync_foet_bg, daemon=True).start()
+
+threading.Thread(target=_load_foet_on_boot, daemon=True).start()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ADMIN ROUTES  (Faculty / HOD / Dean only — session-protected)
+# ─────────────────────────────────────────────────────────────────────────────
+ADMIN_PAGES = os.path.join(BASE, "admin_pages")
+
+def _admin_authed():
+    return session.get("admin_logged_in") is True
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if _admin_authed():
+        return redirect("/admin")
+    error = ""
+    if request.method == "POST":
+        u = request.form.get("username", "").strip()
+        p = request.form.get("password", "").strip()
+        if u == ADMIN_USERNAME and p == ADMIN_PASSWORD:
+            session["admin_logged_in"] = True
+            session.permanent = False
+            return redirect("/admin")
+        error = "Invalid username or password."
+    with open(os.path.join(ADMIN_PAGES, "login.html"), encoding="utf-8") as f:
+        html = f.read()
+    err_html = f'<div class="error-msg">{error}</div>' if error else ""
+    html = html.replace("{{ERROR_BLOCK}}", err_html)
+    return Response(html, content_type="text/html")
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.clear()
+    return redirect("/admin/login")
+
+@app.route("/admin")
+def admin_dashboard():
+    if not _admin_authed():
+        return redirect("/admin/login")
+    with open(os.path.join(ADMIN_PAGES, "dashboard.html"), encoding="utf-8") as f:
+        html = f.read()
+    return Response(html, content_type="text/html")
+
+@app.route("/api/admin/data")
+def api_admin_data():
+    if not _admin_authed():
+        return jsonify({"error": "Unauthorized"}), 401
+    data = _foet_cache.get("data")
+    if not data:
+        data = parse_foet_excel()
+        if data:
+            with _foet_lock:
+                _foet_cache["data"]      = data
+                _foet_cache["loaded_at"] = time.time()
+    return jsonify({
+        "data":        data,
+        "sync_status": _foet_cache.get("sync_status", "Idle"),
+        "loaded_at":   _foet_cache.get("loaded_at", 0),
+    })
+
+@app.route("/api/admin/sync", methods=["POST"])
+def api_admin_sync():
+    if not _admin_authed():
+        return jsonify({"error": "Unauthorized"}), 401
+    with _foet_lock:
+        _foet_cache["sync_status"] = "Syncing..."
+    threading.Thread(target=_sync_foet_bg, daemon=True).start()
+    return jsonify({"status": "started", "message": "Sync running in background — fresh data ready in ~10 s."})
 
 
 if __name__ == "__main__":

@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Faculty Login | FOET Attendance Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy-primary: #002147;
+      --navy-header:  #002b5c;
+      --gold-primary: #c8932a;
+      --body-bg:      #f1f5f9;
+      --card-bg:      #ffffff;
+      --border-color: #cbd5e1;
+      --text-main:    #0f172a;
+      --text-muted:   #334155;
+      --text-light:   #64748b;
+      --red-primary:  #dc2626;
+      --red-bg:       #fef2f2;
+    }
+
+    html { background: var(--navy-primary); min-height: 100vh; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: var(--body-bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: var(--navy-primary);
+      border-bottom: 3px solid var(--gold-primary);
+      padding: 14px 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .brand img { height: 52px; width: auto; object-fit: contain; }
+
+    .brand-text h1 {
+      font-size: 1.2rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      color: #fff;
+      text-transform: uppercase;
+    }
+
+    .brand-text p {
+      font-size: 0.78rem;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
+    .brand-text span { color: var(--gold-primary); }
+
+    main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+
+    .login-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 4px 24px rgba(0,33,71,0.10);
+    }
+
+    .login-card h2 {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--navy-primary);
+      margin-bottom: 4px;
+    }
+
+    .login-card p {
+      font-size: 0.85rem;
+      color: var(--text-light);
+      margin-bottom: 28px;
+    }
+
+    .divider {
+      height: 2px;
+      background: linear-gradient(90deg, var(--gold-primary) 0%, transparent 100%);
+      margin-bottom: 28px;
+    }
+
+    .field { margin-bottom: 18px; }
+
+    label {
+      display: block;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1.5px solid var(--border-color);
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      color: var(--text-main);
+      background: #f8fafc;
+      transition: border-color 0.15s;
+      outline: none;
+    }
+
+    input[type="text"]:focus, input[type="password"]:focus {
+      border-color: var(--navy-primary);
+      background: #fff;
+    }
+
+    .error-msg {
+      background: var(--red-bg);
+      border: 1px solid #fecaca;
+      color: var(--red-primary);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 18px;
+    }
+
+    button[type="submit"] {
+      width: 100%;
+      padding: 11px;
+      background: var(--navy-primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.03em;
+      transition: background 0.15s;
+      margin-top: 6px;
+    }
+
+    button[type="submit"]:hover { background: var(--navy-header); }
+
+    .footer-note {
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--text-light);
+      margin-top: 20px;
+    }
+
+    footer {
+      background: var(--navy-primary);
+      color: #94a3b8;
+      text-align: center;
+      padding: 14px;
+      font-size: 0.78rem;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <img src="/atmiyalogonaac.png" alt="Atmiya University" />
+      <div class="brand-text">
+        <h1>Atmiya University</h1>
+        <p>Rajkot, Gujarat &nbsp;|&nbsp; <span>Faculty of Engineering &amp; Technology</span></p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="login-card">
+      <h2>Faculty Portal</h2>
+      <p>Sign in to access the FOET attendance dashboard</p>
+      <div class="divider"></div>
+
+      {{ERROR_BLOCK}}
+
+      <form method="POST" action="/admin/login">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" name="username" autocomplete="username" required placeholder="Enter username" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" name="password" autocomplete="current-password" required placeholder="Enter password" />
+        </div>
+        <button type="submit">Sign In</button>
+      </form>
+
+      <p class="footer-note">Access restricted to Faculty, HOD &amp; Dean only</p>
+    </div>
+  </main>
+
+  <footer>
+    &copy; 2026 Atmiya University, Rajkot, Gujarat. All Rights Reserved.
+  </footer>
+
+</body>
+</html>

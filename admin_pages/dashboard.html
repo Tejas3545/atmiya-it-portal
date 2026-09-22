@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FOET Dashboard | Atmiya University</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy-dark:    #001a36;
+      --navy-primary: #002147;
+      --navy-header:  #002b5c;
+      --gold-primary: #c8932a;
+      --gold-light:   #e6c667;
+      --body-bg:      #f1f5f9;
+      --card-bg:      #ffffff;
+      --border-color: #cbd5e1;
+      --text-main:    #0f172a;
+      --text-muted:   #334155;
+      --text-light:   #64748b;
+
+      --att-red2:  #b91c1c; /* <40% */
+      --att-red1:  #ef4444; /* 40-60% */
+      --att-yel:   #f59e0b; /* 60-80% */
+      --att-grn:   #15803d; /* >=80% */
+
+      --att-red2-bg: #fde8e8;
+      --att-red1-bg: #fee2e2;
+      --att-yel-bg:  #fef9c3;
+      --att-grn-bg:  #dcfce7;
+    }
+
+    html { background: var(--navy-primary); }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      background: var(--body-bg);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── HEADER ── */
+    .site-header {
+      background: var(--navy-primary);
+      border-bottom: 3px solid var(--gold-primary);
+      color: #fff;
+      padding: 14px 0;
+      box-shadow: 0 4px 12px rgba(0,33,71,.15);
+    }
+
+    .header-inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .college-brand { display: flex; align-items: center; gap: 14px; }
+
+    .brand-logo { height: 56px; width: auto; object-fit: contain; }
+
+    .brand-text h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      line-height: 1.1;
+    }
+
+    .brand-text p { font-size: .78rem; color: #94a3b8; margin-top: 2px; }
+    .brand-text span { color: var(--gold-primary); }
+
+    .header-right { display: flex; align-items: center; gap: 12px; }
+
+    .badge-title {
+      font-size: .78rem;
+      font-weight: 600;
+      color: var(--gold-light);
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .btn-sm {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: .82rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: background .15s;
+      white-space: nowrap;
+    }
+
+    .btn-outline {
+      background: rgba(255,255,255,.1);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,.25);
+    }
+    .btn-outline:hover { background: rgba(255,255,255,.18); }
+
+    .btn-gold {
+      background: var(--gold-primary);
+      color: var(--navy-dark);
+      font-weight: 700;
+    }
+    .btn-gold:hover { background: var(--gold-light); }
+
+    /* ── MAIN ── */
+    main {
+      flex: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 24px 48px;
+      width: 100%;
+    }
+
+    /* ── PAGE HEADING ── */
+    .page-heading {
+      margin-bottom: 24px;
+    }
+
+    .page-heading h2 {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--navy-primary);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    .page-heading p {
+      font-size: .85rem;
+      color: var(--text-light);
+      margin-top: 4px;
+    }
+
+    .star-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 10px 0 6px;
+    }
+    .star-line { flex: 1; height: 1px; background: var(--border-color); }
+    .star-icon { color: var(--gold-primary); font-size: 1rem; }
+
+    /* ── STAT CARDS ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 20px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-card .label {
+      font-size: .75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text-light);
+    }
+
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--navy-primary);
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1.1;
+    }
+
+    .stat-card .sub {
+      font-size: .78rem;
+      color: var(--text-light);
+      margin-top: 2px;
+    }
+
+    .stat-card.alert .value { color: var(--att-red2); }
+    .stat-card.good  .value { color: var(--att-grn); }
+
+    /* ── SECTION TITLE ── */
+    .section-title {
+      font-size: .9rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--navy-primary);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-title::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border-color);
+    }
+
+    /* ── CHART CARD ── */
+    .chart-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 22px 24px;
+      margin-bottom: 28px;
+    }
+
+    .chart-wrap {
+      position: relative;
+      height: 320px;
+    }
+
+    /* ── TABLE ── */
+    .table-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 28px;
+    }
+
+    .table-scroll { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .82rem;
+      min-width: 900px;
+    }
+
+    thead tr {
+      background: var(--navy-primary);
+      color: #fff;
+    }
+
+    thead th {
+      padding: 10px 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: .72rem;
+      letter-spacing: .06em;
+      white-space: nowrap;
+      text-align: left;
+    }
+
+    thead th.num { text-align: center; }
+
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    tbody tr:hover { background: #f1f5f9; }
+
+    td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      white-space: nowrap;
+    }
+
+    .td-dept {
+      font-weight: 700;
+      color: var(--navy-primary);
+      font-size: .8rem;
+    }
+
+    .td-prog { font-weight: 500; color: var(--text-muted); }
+
+    .sem-badge {
+      display: inline-block;
+      background: #e0f2fe;
+      color: #0369a1;
+      border-radius: 5px;
+      padding: 2px 8px;
+      font-size: .72rem;
+      font-weight: 700;
+    }
+
+    .status-ok      { color: var(--att-grn);  font-weight: 700; }
+    .status-pending { color: var(--att-yel);  font-weight: 600; }
+
+    .num-cell {
+      text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .8rem;
+    }
+
+    /* Week cells color coding */
+    .wk { text-align: center; font-family: 'JetBrains Mono', monospace; font-size: .78rem; padding: 9px 8px; }
+    .wk-grn  { background: var(--att-grn-bg);  color: #14532d;  font-weight: 600; }
+    .wk-yel  { background: var(--att-yel-bg);  color: #78350f;  font-weight: 600; }
+    .wk-red1 { background: var(--att-red1-bg); color: #991b1b;  font-weight: 600; }
+    .wk-red2 { background: var(--att-red2-bg); color: #7f1d1d;  font-weight: 700; }
+    .wk-na   { background: #f8fafc;            color: #94a3b8; }
+
+    /* ── LEGEND ── */
+    .legend {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      align-items: center;
+      padding: 12px 16px;
+      background: #f8fafc;
+      border-top: 1px solid var(--border-color);
+      font-size: .77rem;
+    }
+
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .legend-dot  { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+
+    /* ── SYNC BAR ── */
+    .sync-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px 18px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+
+    .sync-status {
+      font-size: .82rem;
+      color: var(--text-light);
+    }
+
+    .sync-status strong { color: var(--text-main); }
+
+    /* ── FOOTER ── */
+    footer {
+      background: var(--navy-primary);
+      color: #94a3b8;
+      text-align: center;
+      padding: 14px;
+      font-size: .78rem;
+    }
+
+    /* ── LOADING ── */
+    .loading {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-light);
+      font-size: .95rem;
+    }
+
+    @media (max-width: 700px) {
+      .stats-row { grid-template-columns: 1fr; }
+      .header-inner { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .badge-title { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="college-brand">
+        <img src="/atmiyalogonaac.png" alt="Atmiya University Logo" class="brand-logo" />
+        <div class="brand-text">
+          <h1>Atmiya University</h1>
+          <p>Rajkot, Gujarat &nbsp;|&nbsp; <span>Yogidam Sarva-Bhutanam</span></p>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="badge-title">Faculty of Engineering &amp; Technology</span>
+        <button class="btn-sm btn-gold" onclick="doSync()" id="sync-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M2.5 16l1.2 1.8a10 10 0 0 0 18.8-4.3"/>
+          </svg>
+          Refresh
+        </button>
+        <a href="/admin/logout" class="btn-sm btn-outline">Sign Out</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main>
+
+    <div class="page-heading">
+      <h2>FOET Attendance Dashboard</h2>
+      <div class="star-divider">
+        <span class="star-line"></span>
+        <span class="star-icon">&#9733;</span>
+        <span class="star-line"></span>
+      </div>
+      <p>Overall attendance summary across all departments and semesters</p>
+    </div>
+
+    <div id="app">
+      <div class="loading">Loading data...</div>
+    </div>
+
+  </main>
+
+  <footer>
+    <p>Faculty of Engineering &amp; Technology (FOET) &nbsp;&mdash;&nbsp; Admin Dashboard</p>
+    <p>&copy; 2026 Atmiya University, Rajkot, Gujarat. All Rights Reserved.</p>
+  </footer>
+
+  <script>
+    let chartInstance = null;
+
+    function attColor(v) {
+      if (v === null || v === undefined) return "wk-na";
+      if (v >= 80)  return "wk-grn";
+      if (v >= 60)  return "wk-yel";
+      if (v >= 40)  return "wk-red1";
+      return "wk-red2";
+    }
+
+    function barColor(v) {
+      if (v >= 80)  return "#15803d";
+      if (v >= 60)  return "#d97706";
+      if (v >= 40)  return "#ef4444";
+      return "#991b1b";
+    }
+
+    function fmt(v) {
+      if (v === null || v === undefined) return "—";
+      return v.toFixed(1) + "%";
+    }
+
+    function render(payload) {
+      const { data, sync_status } = payload;
+      if (!data || !data.rows || data.rows.length === 0) {
+        document.getElementById("app").innerHTML = '<div class="loading">No data available.</div>';
+        return;
+      }
+
+      const { rows, week_labels, total_students, overall_avg, below_60_count } = data;
+
+      // Stat card rating for overall avg
+      const avgClass = overall_avg >= 80 ? "good" : overall_avg >= 60 ? "" : "alert";
+
+      let html = `
+      <div class="sync-bar">
+        <div class="sync-status">Data: <strong>${sync_status}</strong></div>
+        <div class="sync-status">Total students: <strong>${total_students.toLocaleString()}</strong></div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="label">Total Students</div>
+          <div class="value">${total_students.toLocaleString()}</div>
+          <div class="sub">across all departments</div>
+        </div>
+        <div class="stat-card ${avgClass}">
+          <div class="label">Overall Avg Attendance</div>
+          <div class="value">${overall_avg.toFixed(1)}%</div>
+          <div class="sub">average across all programs</div>
+        </div>
+        <div class="stat-card alert">
+          <div class="label">Programs Below 60%</div>
+          <div class="value">${below_60_count}</div>
+          <div class="sub">require attention</div>
+        </div>
+      </div>
+
+      <div class="section-title">Attendance by Program</div>
+      <div class="chart-card">
+        <div class="chart-wrap">
+          <canvas id="barChart"></canvas>
+        </div>
+      </div>
+
+      <div class="section-title">Week-wise Breakdown</div>
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Department</th>
+                <th>Program</th>
+                <th class="num">Sem</th>
+                <th class="num">Students</th>
+                <th class="num">Status</th>
+                <th class="num">Avg</th>
+                ${week_labels.map(w => `<th class="num">${w}</th>`).join("")}
+              </tr>
+            </thead>
+            <tbody>`;
+
+      let lastDept = "";
+      rows.forEach(row => {
+        const deptCell = row.department !== lastDept
+          ? `<td class="td-dept">${row.department}</td>`
+          : `<td class="td-dept" style="color:#94a3b8; font-weight:400"></td>`;
+        lastDept = row.department;
+
+        const statusCls = row.status === "OK" ? "status-ok" : "status-pending";
+        const avgCls = attColor(row.avg);
+
+        const weekCells = week_labels.map((_, i) => {
+          const v = row.weeks[i];
+          const cls = attColor(v);
+          return `<td class="wk ${cls}">${v !== null && v !== undefined ? v.toFixed(1)+"%" : "—"}</td>`;
+        }).join("");
+
+        html += `
+              <tr>
+                ${deptCell}
+                <td class="td-prog">${row.link}</td>
+                <td class="num-cell"><span class="sem-badge">Sem ${row.semester}</span></td>
+                <td class="num-cell">${row.total}</td>
+                <td class="num-cell ${statusCls}">${row.status}</td>
+                <td class="wk ${avgCls}">${fmt(row.avg)}</td>
+                ${weekCells}
+              </tr>`;
+      });
+
+      html += `
+            </tbody>
+          </table>
+        </div>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#15803d"></div> &ge;80% (Good)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#d97706"></div> 60–80% (Acceptable)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div> 40–60% (Low)</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#991b1b"></div> &lt;40% (Critical)</div>
+        </div>
+      </div>`;
+
+      document.getElementById("app").innerHTML = html;
+
+      // Draw bar chart
+      const labels = rows.map(r => `${r.link} (S${r.semester})`);
+      const avgs   = rows.map(r => r.avg);
+      const colors = avgs.map(v => barColor(v));
+
+      if (chartInstance) chartInstance.destroy();
+      const ctx = document.getElementById("barChart").getContext("2d");
+      chartInstance = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [{
+            label: "Average Attendance (%)",
+            data: avgs,
+            backgroundColor: colors,
+            borderRadius: 5,
+            borderSkipped: false,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => `${ctx.raw.toFixed(1)}%`
+              }
+            }
+          },
+          scales: {
+            x: {
+              ticks: {
+                font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 },
+                maxRotation: 45,
+              },
+              grid: { display: false }
+            },
+            y: {
+              min: 0,
+              max: 100,
+              ticks: {
+                callback: v => v + "%",
+                font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 },
+              },
+              grid: { color: "#e2e8f0" }
+            }
+          }
+        }
+      });
+    }
+
+    async function loadData() {
+      try {
+        const res = await fetch("/api/admin/data");
+        if (res.status === 401) {
+          window.location.href = "/admin/login";
+          return;
+        }
+        const payload = await res.json();
+        render(payload);
+      } catch (e) {
+        document.getElementById("app").innerHTML = '<div class="loading">Failed to load data. Please refresh.</div>';
+      }
+    }
+
+    async function doSync() {
+      const btn = document.getElementById("sync-btn");
+      btn.disabled = true;
+      btn.textContent = "Syncing...";
+      try {
+        await fetch("/api/admin/sync", { method: "POST" });
+        setTimeout(() => {
+          loadData();
+          btn.disabled = false;
+          btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M2.5 22v-6h6"/><path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M2.5 16l1.2 1.8a10 10 0 0 0 18.8-4.3"/></svg> Refresh`;
+        }, 12000);
+      } catch {
+        btn.disabled = false;
+      }
+    }
+
+    loadData();
+  </script>
+</body>
+</html>

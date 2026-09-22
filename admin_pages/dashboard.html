@@ -6,7 +6,7 @@
   <title id="doc-title">FOET Dashboard | Atmiya University</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -73,13 +73,13 @@
     .brand-text h1 {
       font-size: 1.25rem;
       font-weight: 800;
-      letter-spacing: .05em;
+      letter-spacing: .04em;
       text-transform: uppercase;
-      line-height: 1.1;
+      line-height: 1.25;
     }
 
-    .brand-text p { font-size: .78rem; color: #94a3b8; margin-top: 2px; }
-    .brand-text span { color: var(--gold-primary); }
+    .brand-text p { font-size: .78rem; color: #94a3b8; margin-top: 2px; line-height: 1.35; }
+    .brand-text span { color: var(--gold-primary); font-weight: 600; }
 
     .header-right { display: flex; align-items: center; gap: 12px; }
 
@@ -160,27 +160,6 @@
     }
     .star-line { flex: 1; height: 1px; background: var(--border-color); }
     .star-icon { color: var(--gold-primary); font-size: 1rem; }
-
-    /* ── SYNC BAR ── */
-    .sync-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      background: var(--card-bg);
-      border: 1px solid var(--border-color);
-      border-radius: 10px;
-      padding: 12px 18px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
-    }
-
-    .sync-status {
-      font-size: .82rem;
-      color: var(--text-light);
-    }
-
-    .sync-status strong { color: var(--text-main); }
 
     /* ── STAT CARDS ── */
     .stats-row {
@@ -420,13 +399,30 @@
     }
 
     @media (max-width: 900px) {
-      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .header-inner { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .header-right { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; align-items: center; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); gap: 12px; }
       .charts-grid { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 600px) {
+      .brand-logo { height: 42px; }
+      .brand-text h1 { font-size: 1.05rem; }
+      .brand-text p { font-size: 0.72rem; }
+      .page-heading h2 { font-size: 1.2rem; }
+      .badge-title { font-size: 0.72rem; padding: 4px 8px; }
+      .btn-sm { font-size: 0.78rem; padding: 6px 10px; }
+      .stat-card { padding: 14px 12px; }
+      .stat-card .value { font-size: 1.45rem; }
+      .chart-card { padding: 14px; }
+      .chart-wrap { height: 260px; }
+      main { padding: 16px 12px 36px; }
+    }
+
+    @media (max-width: 440px) {
       .stats-row { grid-template-columns: 1fr; }
-      .badge-title { display: none; }
+      .header-right { gap: 6px; }
+      .btn-sm { font-size: 0.74rem; padding: 5px 8px; }
     }
 
     /* ── MODAL DIALOG ── */
@@ -651,11 +647,6 @@
       const avgClass = overall_avg >= 80 ? "good" : overall_avg >= 60 ? "" : "alert";
 
       let html = `
-      <div class="sync-bar">
-        <div class="sync-status">Sync Status: <strong>${sync_status}</strong></div>
-        <div class="sync-status">Logged in as: <strong>${sess.short}</strong></div>
-      </div>
-
       <div class="stats-row">
         <div class="stat-card">
           <div class="label">Total Students</div>

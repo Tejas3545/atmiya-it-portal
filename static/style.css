@@ -116,7 +116,7 @@ body {
   font-weight: 800;
   letter-spacing: 0.05em;
   color: #ffffff;
-  line-height: 1.1;
+  line-height: 1.3;
   text-transform: uppercase;
 }
 
@@ -126,6 +126,7 @@ body {
   color: #cbd5e1;
   letter-spacing: 0.04em;
   margin-top: 3px;
+  line-height: 1.35;
 }
 
 .tagline-gold {
@@ -260,6 +261,7 @@ body {
   color: var(--navy-primary);
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  line-height: 1.3;
 }
 
 .star-divider {
@@ -285,6 +287,7 @@ body {
   font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-muted);
+  line-height: 1.45;
 }
 
 /* ==========================================================================
@@ -793,7 +796,7 @@ body {
 .metric-num {
   font-size: 1.85rem;
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1.25;
   margin: 2px 0;
 }
 
@@ -1199,6 +1202,22 @@ body {
   .info-item--name  { grid-column: span 1; }
   .dept-badge-title { display: none; }
   .brand-logo       { height: 44px; }
+  .brand-name       { font-size: 1.05rem; line-height: 1.3; }
+  .brand-sub        { font-size: 0.72rem; line-height: 1.35; }
+  .portal-title     { font-size: 1.2rem; line-height: 1.3; }
+  .portal-subtitle  { font-size: 0.85rem; line-height: 1.4; }
+  .main-content     { padding: 20px 14px 48px; }
+  .header-inner     { padding: 0 16px; }
   .sync-btn-text    { display: none; }   /* icon only on small screens */
   .sync-timestamp   { display: none !important; }
 }
+
+@media (max-width: 440px) {
+  .header-inner     { flex-direction: column; align-items: flex-start; gap: 10px; padding: 0 14px; }
+  .header-right     { width: 100%; justify-content: flex-end; }
+  .brand-logo       { height: 38px; }
+  .brand-name       { font-size: 0.95rem; line-height: 1.25; }
+  .brand-sub        { font-size: 0.68rem; }
+  .week-grid        { grid-template-columns: 1fr 1fr; }
+}
+

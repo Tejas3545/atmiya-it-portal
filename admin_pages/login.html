@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Faculty Login | FOET Attendance Portal</title>
+  <title>{{PORTAL_TITLE}} | Atmiya University</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -69,46 +69,89 @@
     main {
       flex: 1;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 40px 20px;
+      padding: 32px 20px 48px;
     }
+
+    .login-container {
+      width: 100%;
+      max-width: 440px;
+    }
+
+    /* Department selector tabs */
+    .dept-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 14px;
+      justify-content: center;
+    }
+
+    .dept-tab {
+      display: inline-block;
+      padding: 6px 12px;
+      background: #e2e8f0;
+      color: var(--text-muted);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+
+    .dept-tab:hover {
+      background: #cbd5e1;
+      color: var(--navy-primary);
+    }
+
+    .dept-tab.active {
+      background: var(--navy-primary);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(0,33,71,0.25);
+    }
+
+    .dept-tab.active[data-dept="it"]    { background: #1d4ed8; }
+    .dept-tab.active[data-dept="ce"]    { background: #0369a1; }
+    .dept-tab.active[data-dept="civil"] { background: #b45309; }
+    .dept-tab.active[data-dept="elec"]  { background: #047857; }
+    .dept-tab.active[data-dept="mech"]  { background: #b91c1c; }
 
     .login-card {
       background: var(--card-bg);
       border: 1px solid var(--border-color);
       border-radius: 12px;
-      padding: 40px 36px;
-      width: 100%;
-      max-width: 400px;
+      padding: 36px 32px;
       box-shadow: 0 4px 24px rgba(0,33,71,0.10);
     }
 
     .login-card h2 {
-      font-size: 1.3rem;
-      font-weight: 700;
+      font-size: 1.25rem;
+      font-weight: 800;
       color: var(--navy-primary);
       margin-bottom: 4px;
     }
 
-    .login-card p {
-      font-size: 0.85rem;
+    .login-card p.sub {
+      font-size: 0.82rem;
       color: var(--text-light);
-      margin-bottom: 28px;
+      margin-bottom: 22px;
+      line-height: 1.4;
     }
 
     .divider {
       height: 2px;
       background: linear-gradient(90deg, var(--gold-primary) 0%, transparent 100%);
-      margin-bottom: 28px;
+      margin-bottom: 24px;
     }
 
     .field { margin-bottom: 18px; }
 
     label {
       display: block;
-      font-size: 0.82rem;
-      font-weight: 600;
+      font-size: 0.78rem;
+      font-weight: 700;
       color: var(--text-muted);
       margin-bottom: 6px;
       text-transform: uppercase;
@@ -121,10 +164,10 @@
       border: 1.5px solid var(--border-color);
       border-radius: 8px;
       font-family: inherit;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       color: var(--text-main);
       background: #f8fafc;
-      transition: border-color 0.15s;
+      transition: border-color 0.15s, background-color 0.15s;
       outline: none;
     }
 
@@ -139,8 +182,8 @@
       color: var(--red-primary);
       border-radius: 8px;
       padding: 10px 14px;
-      font-size: 0.85rem;
-      font-weight: 500;
+      font-size: 0.82rem;
+      font-weight: 600;
       margin-bottom: 18px;
     }
 
@@ -152,7 +195,7 @@
       border: none;
       border-radius: 8px;
       font-family: inherit;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       font-weight: 700;
       cursor: pointer;
       letter-spacing: 0.03em;
@@ -164,10 +207,22 @@
 
     .footer-note {
       text-align: center;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       color: var(--text-light);
-      margin-top: 20px;
+      margin-top: 18px;
     }
+
+    .back-home {
+      display: block;
+      text-align: center;
+      margin-top: 14px;
+      font-size: 0.78rem;
+      color: var(--navy-primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .back-home:hover { text-decoration: underline; }
 
     footer {
       background: var(--navy-primary);
@@ -191,32 +246,57 @@
   </header>
 
   <main>
-    <div class="login-card">
-      <h2>Faculty Portal</h2>
-      <p>Sign in to access the FOET attendance dashboard</p>
-      <div class="divider"></div>
+    <div class="login-container">
 
-      {{ERROR_BLOCK}}
+      <!-- Department quick switcher -->
+      <nav class="dept-tabs" aria-label="Department Login Select">
+        <a href="/admin/login" class="dept-tab" data-dept="master" id="tab-master">Dean / FOET</a>
+        <a href="/admin/it"    class="dept-tab" data-dept="it"    id="tab-it">IT</a>
+        <a href="/admin/ce"    class="dept-tab" data-dept="ce"    id="tab-ce">CE</a>
+        <a href="/admin/civil" class="dept-tab" data-dept="civil" id="tab-civil">Civil</a>
+        <a href="/admin/elec"  class="dept-tab" data-dept="elec"  id="tab-elec">Elec</a>
+        <a href="/admin/mech"  class="dept-tab" data-dept="mech"  id="tab-mech">Mech</a>
+      </nav>
 
-      <form method="POST" action="/admin/login">
-        <div class="field">
-          <label>Username</label>
-          <input type="text" name="username" autocomplete="username" required placeholder="Enter username" />
-        </div>
-        <div class="field">
-          <label>Password</label>
-          <input type="password" name="password" autocomplete="current-password" required placeholder="Enter password" />
-        </div>
-        <button type="submit">Sign In</button>
-      </form>
+      <div class="login-card">
+        <h2>{{PORTAL_TITLE}}</h2>
+        <p class="sub">{{PORTAL_SUB}}</p>
+        <div class="divider"></div>
 
-      <p class="footer-note">Access restricted to Faculty, HOD &amp; Dean only</p>
+        {{ERROR_BLOCK}}
+
+        <form method="POST" action="{{ACTION_URL}}">
+          <div class="field">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" autocomplete="username" required placeholder="Enter your username" />
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required placeholder="Enter password" />
+          </div>
+          <button type="submit">Sign In</button>
+        </form>
+
+        <p class="footer-note">Restricted access for Faculty, HOD &amp; Dean</p>
+      </div>
+
+      <a href="/" class="back-home">&larr; Return to Student Portal</a>
+
     </div>
   </main>
 
   <footer>
     &copy; 2026 Atmiya University, Rajkot, Gujarat. All Rights Reserved.
   </footer>
+
+  <script>
+    // Highlight active department tab
+    const active = "{{ACTIVE_DEPT}}";
+    const tab = document.getElementById("tab-" + active);
+    if (tab) {
+      tab.classList.add("active");
+    }
+  </script>
 
 </body>
 </html>

@@ -41,6 +41,9 @@ const comingSoon = document.getElementById("coming-soon-card");
   const pageTitle = document.getElementById("page-title");
   if (pageTitle) pageTitle.textContent = `${deptMeta.short} Attendance Portal | Atmiya University`;
 
+  const facLink = document.getElementById("faculty-link");
+  if (facLink) facLink.href = `/admin/${DEPT_KEY}`;
+
   // Always show search form — never block with Coming Soon
   if (comingSoon) comingSoon.style.display = "none";
   if (searchSec)  searchSec.style.display  = "block";

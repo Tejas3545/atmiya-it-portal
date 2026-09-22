@@ -19,9 +19,73 @@ app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "atmiya-foet-admin-secret-2024-xK9mP")
 
-# Admin credentials (set in Render env vars for production)
-ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "foet2024")
+# ─────────────────────────────────────────────────────────────────────────────
+# DEPARTMENT ADMIN CREDENTIALS
+# Each entry: env-var key → { username, password, dept_filter, label }
+#
+# dept_filter = None  → sees ALL departments (Dean / Master view)
+# dept_filter = list  → sees only rows whose "department" field matches
+#
+# Env vars to set in Render (per department):
+#   ADMIN_MASTER_USER / ADMIN_MASTER_PASS   → Dean (sees all)
+#   ADMIN_IT_USER     / ADMIN_IT_PASS       → IT HOD
+#   ADMIN_CE_USER     / ADMIN_CE_PASS       → Computer Engg HOD
+#   ADMIN_CIVIL_USER  / ADMIN_CIVIL_PASS    → Civil HOD
+#   ADMIN_ELEC_USER   / ADMIN_ELEC_PASS     → Electrical HOD
+#   ADMIN_MECH_USER   / ADMIN_MECH_PASS     → Mechanical HOD
+# ─────────────────────────────────────────────────────────────────────────────
+_e = os.environ.get   # shorthand
+
+DEPT_CRED_MAP = {
+    "master": {
+        "username":    _e("ADMIN_MASTER_USER") or _e("ADMIN_USERNAME") or "dean",
+        "password":    _e("ADMIN_MASTER_PASS") or _e("ADMIN_PASSWORD") or "foet2024",
+        "dept_filter": None,   # None = all departments (Dean)
+        "label":       "FOET Master Dashboard",
+        "short":       "Dean / FOET Master",
+        "color":       "#002147",
+    },
+    "it": {
+        "username":    _e("ADMIN_IT_USER") or "hod_it",
+        "password":    _e("ADMIN_IT_PASS") or "it2024",
+        "dept_filter": ["IT"],
+        "label":       "B.Tech Information Technology - HOD Dashboard",
+        "short":       "IT Department",
+        "color":       "#1d4ed8",
+    },
+    "ce": {
+        "username":    _e("ADMIN_CE_USER") or "hod_ce",
+        "password":    _e("ADMIN_CE_PASS") or "ce2024",
+        "dept_filter": ["Computer"],   # Contains CE and CSE programs
+        "label":       "B.Tech Computer Engineering - HOD Dashboard",
+        "short":       "Computer Engineering",
+        "color":       "#0369a1",
+    },
+    "civil": {
+        "username":    _e("ADMIN_CIVIL_USER") or "hod_civil",
+        "password":    _e("ADMIN_CIVIL_PASS") or "civil2024",
+        "dept_filter": ["Civil"],
+        "label":       "B.Tech Civil Engineering - HOD Dashboard",
+        "short":       "Civil Department",
+        "color":       "#b45309",
+    },
+    "elec": {
+        "username":    _e("ADMIN_ELEC_USER") or "hod_elec",
+        "password":    _e("ADMIN_ELEC_PASS") or "elec2024",
+        "dept_filter": ["Electrcial", "Electrical"],   # handles typo in sheet
+        "label":       "B.Tech Electrical Engineering - HOD Dashboard",
+        "short":       "Electrical Department",
+        "color":       "#047857",
+    },
+    "mech": {
+        "username":    _e("ADMIN_MECH_USER") or "hod_mech",
+        "password":    _e("ADMIN_MECH_PASS") or "mech2024",
+        "dept_filter": ["Mechanical"],
+        "label":       "B.Tech Mechanical Engineering - HOD Dashboard",
+        "short":       "Mechanical Department",
+        "color":       "#b91c1c",
+    },
+}
 
 
 # Wrap with WhiteNoise for rock-solid production static asset serving on Render
@@ -182,6 +246,10 @@ def parse_foet_excel():
             current_dept = str(dept_val).strip()
 
         if not current_dept or not link_val or not count_val:
+            continue
+
+        # Skip summary / total rows (e.g. batch count row where sem is None or link is just a number)
+        if sem_val is None or str(link_val).strip().isdigit() or "total" in str(link_val).lower():
             continue
 
         try:
@@ -930,34 +998,125 @@ threading.Thread(target=_load_foet_on_boot, daemon=True).start()
 # ─────────────────────────────────────────────────────────────────────────────
 # ADMIN ROUTES  (Faculty / HOD / Dean only — session-protected)
 # ─────────────────────────────────────────────────────────────────────────────
+# ADMIN ROUTES  (Faculty / HOD / Dean only — session + dept-filtered)
+# ─────────────────────────────────────────────────────────────────────────────
 ADMIN_PAGES = os.path.join(BASE, "admin_pages")
 
 def _admin_authed():
     return session.get("admin_logged_in") is True
 
+def _admin_role():
+    """Return the DEPT_CRED_MAP entry for the current session user."""
+    role_key = session.get("admin_role", "master")
+    return DEPT_CRED_MAP.get(role_key, DEPT_CRED_MAP["master"])
+
+def _filter_foet_data(data, dept_filter):
+    """Return a copy of data with rows filtered to dept_filter (or all if None)."""
+    if not data:
+        return data
+    if dept_filter is None:
+        return data   # master sees everything
+    filtered = [r for r in data["rows"] if r["department"] in dept_filter]
+    if not filtered:
+        return {**data, "rows": [], "total_students": 0, "overall_avg": 0, "below_60_count": 0}
+    total   = sum(r["total"] for r in filtered)
+    avgs    = [r["avg"] for r in filtered if r["avg"] > 0]
+    overall = round(sum(avgs) / len(avgs), 2) if avgs else 0
+    below60 = sum(1 for r in filtered if 0 < r["avg"] < 60)
+    return {**data, "rows": filtered, "total_students": total,
+            "overall_avg": overall, "below_60_count": below60}
+
+
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
+    dept_param = request.args.get("dept", "").strip().lower()
+    if dept_param in DEPT_CRED_MAP and dept_param != "master":
+        return redirect(f"/admin/{dept_param}")
+
     if _admin_authed():
         return redirect("/admin")
     error = ""
     if request.method == "POST":
         u = request.form.get("username", "").strip()
         p = request.form.get("password", "").strip()
-        if u == ADMIN_USERNAME and p == ADMIN_PASSWORD:
+        matched = None
+        for role_key, cred in DEPT_CRED_MAP.items():
+            if cred["username"] and u == cred["username"] and p == cred["password"]:
+                matched = role_key
+                break
+        if matched:
             session["admin_logged_in"] = True
-            session.permanent = False
+            session["admin_role"]      = matched
+            session.permanent          = False
             return redirect("/admin")
         error = "Invalid username or password."
     with open(os.path.join(ADMIN_PAGES, "login.html"), encoding="utf-8") as f:
         html = f.read()
     err_html = f'<div class="error-msg">{error}</div>' if error else ""
     html = html.replace("{{ERROR_BLOCK}}", err_html)
+    html = html.replace("{{PORTAL_TITLE}}", "FOET Faculty &amp; HOD Portal")
+    html = html.replace("{{PORTAL_SUB}}", "Sign in with your department credentials to view your semester dashboard")
+    html = html.replace("{{ACTION_URL}}", "/admin/login")
+    html = html.replace("{{ACTIVE_DEPT}}", "master")
     return Response(html, content_type="text/html")
+
+
+@app.route("/admin/<dept_slug>", methods=["GET", "POST"])
+def admin_dept_login(dept_slug):
+    dept_slug = dept_slug.lower()
+    if dept_slug not in DEPT_CRED_MAP:
+        return redirect("/admin/login")
+
+    # If already logged into this department (or master), open dashboard directly
+    if _admin_authed():
+        curr = session.get("admin_role")
+        if curr == dept_slug or curr == "master":
+            return redirect("/admin")
+
+    error = ""
+    cred = DEPT_CRED_MAP[dept_slug]
+    if request.method == "POST":
+        u = request.form.get("username", "").strip()
+        p = request.form.get("password", "").strip()
+        # Verify credentials for this specific department
+        if cred["username"] and u == cred["username"] and p == cred["password"]:
+            session["admin_logged_in"] = True
+            session["admin_role"]      = dept_slug
+            session.permanent          = False
+            return redirect("/admin")
+        # Also allow dean to login from here into this department's view
+        master_cred = DEPT_CRED_MAP["master"]
+        if u == master_cred["username"] and p == master_cred["password"]:
+            session["admin_logged_in"] = True
+            session["admin_role"]      = dept_slug
+            session.permanent          = False
+            return redirect("/admin")
+        error = f"Invalid username or password for {cred['short']}."
+
+    with open(os.path.join(ADMIN_PAGES, "login.html"), encoding="utf-8") as f:
+        html = f.read()
+    err_html = f'<div class="error-msg">{error}</div>' if error else ""
+    html = html.replace("{{ERROR_BLOCK}}", err_html)
+    html = html.replace("{{PORTAL_TITLE}}", f"{cred['short']} — Faculty Login")
+    html = html.replace("{{PORTAL_SUB}}", f"Sign in to view {cred['label']}")
+    html = html.replace("{{ACTION_URL}}", f"/admin/{dept_slug}")
+    html = html.replace("{{ACTIVE_DEPT}}", dept_slug)
+    return Response(html, content_type="text/html")
+
+
+@app.route("/<dept_slug>/admin")
+def dept_admin_shortcut(dept_slug):
+    dept_slug = dept_slug.lower()
+    if dept_slug in DEPT_CRED_MAP:
+        return redirect(f"/admin/{dept_slug}")
+    return redirect("/admin/login")
+
 
 @app.route("/admin/logout")
 def admin_logout():
     session.clear()
     return redirect("/admin/login")
+
 
 @app.route("/admin")
 def admin_dashboard():
@@ -966,6 +1125,23 @@ def admin_dashboard():
     with open(os.path.join(ADMIN_PAGES, "dashboard.html"), encoding="utf-8") as f:
         html = f.read()
     return Response(html, content_type="text/html")
+
+
+@app.route("/api/admin/session")
+def api_admin_session():
+    """Return current session role info for the dashboard to show correct title."""
+    if not _admin_authed():
+        return jsonify({"error": "Unauthorized"}), 401
+    role_key = session.get("admin_role", "master")
+    role = DEPT_CRED_MAP.get(role_key, DEPT_CRED_MAP["master"])
+    return jsonify({
+        "role_key":  role_key,
+        "label":     role["label"],
+        "short":     role["short"],
+        "color":     role.get("color", "#002147"),
+        "is_master": role_key == "master",
+    })
+
 
 @app.route("/api/admin/data")
 def api_admin_data():
@@ -978,11 +1154,15 @@ def api_admin_data():
             with _foet_lock:
                 _foet_cache["data"]      = data
                 _foet_cache["loaded_at"] = time.time()
+    role        = _admin_role()
+    dept_filter = role["dept_filter"]
+    filtered    = _filter_foet_data(data, dept_filter)
     return jsonify({
-        "data":        data,
+        "data":        filtered,
         "sync_status": _foet_cache.get("sync_status", "Idle"),
         "loaded_at":   _foet_cache.get("loaded_at", 0),
     })
+
 
 @app.route("/api/admin/sync", methods=["POST"])
 def api_admin_sync():

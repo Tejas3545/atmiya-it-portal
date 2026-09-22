@@ -17,6 +17,7 @@ except ImportError:
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 CORS(app)
+BASE = os.path.dirname(__file__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "atmiya-foet-admin-secret-2024-xK9mP")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +35,15 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "atmiya-foet-admin-secret-20
 #   ADMIN_ELEC_USER   / ADMIN_ELEC_PASS     → Electrical HOD
 #   ADMIN_MECH_USER   / ADMIN_MECH_PASS     → Mechanical HOD
 # ─────────────────────────────────────────────────────────────────────────────
+_e = os.environ.get   # shorthand
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DYNAMIC CREDENTIALS & GOOGLE SHEET SYNC (Option 2)
+# File: data/credentials.json
+# Sheet Tab: "Users" in FOET Master Spreadsheet (Dean can manage here)
+# ─────────────────────────────────────────────────────────────────────────────
+_CREDENTIALS_FILE = os.path.join(BASE, "data", "credentials.json")
+_cred_lock = threading.RLock()
 _e = os.environ.get   # shorthand
 
 DEPT_CRED_MAP = {
@@ -86,6 +96,72 @@ DEPT_CRED_MAP = {
         "color":       "#b91c1c",
     },
 }
+
+def _load_persisted_credentials():
+    """Load passwords from data/credentials.json if present."""
+    if os.path.exists(_CREDENTIALS_FILE):
+        try:
+            with open(_CREDENTIALS_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+            with _cred_lock:
+                for k, v in saved.items():
+                    if k in DEPT_CRED_MAP and isinstance(v, dict):
+                        if "username" in v and v["username"]:
+                            DEPT_CRED_MAP[k]["username"] = str(v["username"]).strip()
+                        if "password" in v and v["password"]:
+                            DEPT_CRED_MAP[k]["password"] = str(v["password"]).strip()
+        except Exception as e:
+            print(f"[Auth] Could not load persisted credentials: {e}")
+
+def _save_persisted_credentials():
+    """Save current credentials to data/credentials.json."""
+    try:
+        os.makedirs(os.path.dirname(_CREDENTIALS_FILE), exist_ok=True)
+        to_save = {}
+        with _cred_lock:
+            for k, v in DEPT_CRED_MAP.items():
+                to_save[k] = {"username": v["username"], "password": v["password"]}
+        with open(_CREDENTIALS_FILE, "w", encoding="utf-8") as f:
+            json.dump(to_save, f, indent=2)
+    except Exception as e:
+        print(f"[Auth] Could not save persisted credentials: {e}")
+
+_load_persisted_credentials()
+
+def _sync_password_to_sheet(role_key, new_password):
+    """Write updated password to the 'Users' tab in Google Sheets using Sheets API."""
+    token = _get_service_account_token()
+    if not _FOET_URL or not token:
+        return
+    m = re.search(r"/spreadsheets/d/([a-zA-Z0-9-_]+)", _FOET_URL)
+    if not m:
+        return
+    sheet_id = m.group(1)
+
+    try:
+        import requests as req_lib
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        get_url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/Users!A:C"
+        r = req_lib.get(get_url, headers=headers, timeout=10)
+        if r.status_code == 200:
+            rows = r.json().get("values", [])
+            target_row = None
+            for idx, row in enumerate(rows):
+                if row and len(row) > 0 and str(row[0]).strip().lower() == role_key.lower():
+                    target_row = idx + 1
+                    break
+            if target_row:
+                put_url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/Users!C{target_row}?valueInputOption=USER_ENTERED"
+                req_lib.put(put_url, headers=headers, json={"values": [[new_password]]}, timeout=10)
+                print(f"[Sheet Auth] Updated password for '{role_key}' in Google Sheet row {target_row}")
+                return
+
+        append_url = f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}/values/Users!A:C:append?valueInputOption=USER_ENTERED"
+        u_name = DEPT_CRED_MAP.get(role_key, {}).get("username", role_key)
+        req_lib.post(append_url, headers=headers, json={"values": [[role_key, u_name, new_password]]}, timeout=10)
+        print(f"[Sheet Auth] Appended new password row for '{role_key}' in Google Sheet")
+    except Exception as e:
+        print(f"[Sheet Auth] Note: Could not update Google Sheet (ensure sheet is shared with Editor permission): {e}")
 
 
 # Wrap with WhiteNoise for rock-solid production static asset serving on Render
@@ -296,6 +372,27 @@ def parse_foet_excel():
     below_60       = sum(1 for r in result_rows if 0 < r["avg"] < 60)
     week_labels    = [w[1] for w in week_cols]
 
+    # Sync credentials from 'Users' or 'Admin_Users' sheet tab if Dean created one
+    for sname in wb.sheetnames:
+        if sname.strip().lower() in ("users", "admin_users", "user", "admin"):
+            uws = wb[sname]
+            updated_any = False
+            with _cred_lock:
+                for urow in uws.iter_rows(values_only=True):
+                    if not urow or len(urow) < 3:
+                        continue
+                    d_key = str(urow[0] or "").strip().lower()
+                    u_val = str(urow[1] or "").strip()
+                    p_val = str(urow[2] or "").strip()
+                    if d_key in DEPT_CRED_MAP and p_val and u_val:
+                        DEPT_CRED_MAP[d_key]["username"] = u_val
+                        DEPT_CRED_MAP[d_key]["password"] = p_val
+                        updated_any = True
+            if updated_any:
+                _save_persisted_credentials()
+                print(f"[Sheet Auth] Synced credentials from sheet tab: {sname}")
+            break
+
     return {
         "rows":            result_rows,
         "week_labels":     week_labels,
@@ -407,8 +504,8 @@ def _get_service_account_token():
         creds = sa_module.Credentials.from_service_account_info(
             sa_info,
             scopes=[
-                "https://www.googleapis.com/auth/drive.readonly",
-                "https://www.googleapis.com/auth/spreadsheets.readonly",
+                "https://www.googleapis.com/auth/drive",
+                "https://www.googleapis.com/auth/spreadsheets",
             ]
         )
         creds.refresh(ga_requests.Request())
@@ -977,10 +1074,6 @@ def _startup_sync():
             print(f"[Startup] {info['short']}: Skipped (no sheet URL configured)")
 
 
-_startup_thread = threading.Thread(target=_startup_sync, daemon=True)
-_startup_thread.start()
-
-# Also seed the FOET cache from the local Excel on startup
 def _load_foet_on_boot():
     time.sleep(6)
     data = parse_foet_excel()
@@ -992,7 +1085,11 @@ def _load_foet_on_boot():
     if _FOET_URL:
         threading.Thread(target=_sync_foet_bg, daemon=True).start()
 
-threading.Thread(target=_load_foet_on_boot, daemon=True).start()
+
+if os.environ.get("TESTING") != "1":
+    _startup_thread = threading.Thread(target=_startup_sync, daemon=True)
+    _startup_thread.start()
+    threading.Thread(target=_load_foet_on_boot, daemon=True).start()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1172,6 +1269,43 @@ def api_admin_sync():
         _foet_cache["sync_status"] = "Syncing..."
     threading.Thread(target=_sync_foet_bg, daemon=True).start()
     return jsonify({"status": "started", "message": "Sync running in background — fresh data ready in ~10 s."})
+
+
+@app.route("/api/admin/change-password", methods=["POST"])
+def api_admin_change_password():
+    if not _admin_authed():
+        return jsonify({"success": False, "error": "Unauthorized"}), 401
+
+    data = request.get_json(force=True, silent=True) or {}
+    curr_pass = str(data.get("current_password") or "").strip()
+    new_pass  = str(data.get("new_password") or "").strip()
+    conf_pass = str(data.get("confirm_password") or "").strip()
+
+    role_key = session.get("admin_role", "master")
+    cred = DEPT_CRED_MAP.get(role_key)
+    if not cred:
+        return jsonify({"success": False, "error": "Invalid session role"}), 400
+
+    if not curr_pass or curr_pass != cred["password"]:
+        return jsonify({"success": False, "error": "Current password does not match."}), 400
+
+    if not new_pass or len(new_pass) < 6:
+        return jsonify({"success": False, "error": "New password must be at least 6 characters long."}), 400
+
+    if new_pass != conf_pass:
+        return jsonify({"success": False, "error": "New password and confirmation do not match."}), 400
+
+    with _cred_lock:
+        DEPT_CRED_MAP[role_key]["password"] = new_pass
+        _save_persisted_credentials()
+
+    # Attempt to write back to Google Sheet Users tab in background
+    threading.Thread(target=_sync_password_to_sheet, args=(role_key, new_pass), daemon=True).start()
+
+    return jsonify({
+        "success": True,
+        "message": f"Password for {cred['short']} updated successfully."
+    })
 
 
 if __name__ == "__main__":
